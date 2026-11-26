@@ -1,0 +1,216 @@
+# CPU boosts, governor and ADPF
+
+**Status:** in every build since 2026-10-23 (`configs/powerhint.json`, `init/init.mt6878.power.rc`).
+The values have not been measured on a phone; tester reports on smoothness are the only
+evidence so far.
+
+## What a uclamp boost is
+
+`cpu.uclamp.min` asks the scheduler to treat a group's tasks as needing at
+least that share of a CPU's capacity, which pulls the CPU frequency up for
+them. `init.mt6878.power.rc` sets it per task group, and the power HAL raises
+it for a moment on touch, launch and heavy rendering (`configs/powerhint.json`).
+
+`/proc/sys/kernel/sched_util_clamp_min` is a ceiling on all of those requests,
+per-thread ones included. The kernel caps each task's effective `uclamp.min`
+at it (GKI 6.1 `kernel/sched/core.c`, `uclamp_eff_get()`: a request above the
+system default returns the default), and none of the prebuilt vendor modules
+override that.
+
+## The old 12.5% ceiling
+
+Until September 2026 the ceiling was `128` of `1024`, that is 12.5%. It dates
+from darkhz's "Fix frequency lockups" (`d34bf5c`, 2021), which lowered it
+because CPUs stayed stuck at their maximum or minimum frequency. The same-SoC
+trees (tetris, scout, Galaga) and the MT6789 trees (emerald, tanzanite) keep
+it.
+
+claxten10 later configured larger boosts (`663311a`, `8956ae7`, `3413861`,
+`b36c031`, `c901169`, 2025). Under the ceiling each one ran as 12.5%, so the
+tree writes 12.5 in their place:
+
+| Where | Setting | Configured | Written |
+| --- | --- | --- | --- |
+| `init.mt6878.power.rc` | camera-daemon `cpu.uclamp.min` | 70 | 12.5 |
+| `init.mt6878.power.rc` | nnapi-hal `cpu.uclamp.min` | 90 | 12.5 |
+| `powerhint.json` INTERACTION | top-app (`UclampTAMin`) | 40 | 12.5 |
+| `powerhint.json` FIXED_PERFORMANCE | top-app (`UclampTAMin`) | 100 | 12.5 |
+| `powerhint.json` EXPENSIVE_RENDERING | foreground (`UclampFGMin`) | 30 | 12.5 |
+
+## The ceiling is now lifted for ADPF
+
+ADPF hint sessions (HWUI render threads, Chrome, games) size CPU demand per
+frame by setting `uclamp.min` on the session's threads with `sched_setattr`.
+`power-libperfmgr` only accepts sessions when `powerhint.json` has an
+`AdpfConfig`; without one every client got `EX_UNSUPPORTED_OPERATION`.
+A 12.5% ceiling would also have capped each session below its useful range.
+
+The ceiling is now `1024`. Every group and power-hint value above stays at
+12.5, so their behaviour is unchanged; `tests/test_powerhint.py` enforces
+both. Only ADPF threads can go higher, up to `UclampMin_High` (390, 38%).
+
+The `ADPF_DEFAULT` profile follows claxten10's MediaTek profile for gale
+(MT6768, `f5ea899`), minus the heuristic boost entries, which the current
+parser names differently and would reject, dropping every profile. The power
+HAL needs `setsched` on app, SurfaceFlinger, composer and system_server
+threads, `sys_nice` and `mlstrustedsubject` (Pixel's
+`power-libperfmgr/hal_power_default.te`); see
+`sepolicy/vendor/hal_power_default.te`.
+
+Watch for the lockups `d34bf5c` described: CPUs pinned at a fixed frequency
+while idle, visible in
+`/sys/devices/system/cpu/cpufreq/policy*/scaling_cur_freq`. Sessions release
+their clamp when paused or closed, and a stale session times out after
+`StaleTimeFactor` frame periods. If they appear, write `128` back to the
+ceiling to confirm the cause.
+
+## GPU floor on touch
+
+GED's frame-based DVFS aims at the panel period and gets no UI target:
+FPSGO only controls game queues, and HWUI's are left uncontrolled. On the
+20261016 build a Settings scroll kept the GPU at its lowest OPP (35,
+265 MHz) for every sample, with GED utilisation up to 98% and 2–4% janky
+frames. Stock relies on FPSGO's FBT rescue during scrolling instead.
+
+`INTERACTION` now sets `/sys/kernel/ged/hal/custom_boost_gpu_freq` to 24,
+a 508 MHz floor; GED can still go higher. With that floor set by hand
+(2026-10-24 sprint, `malachite-research/2026-10-24/REPORT.md`) jank went to
+0%, p50 frame time from 12 to 8 ms, and a 120 Hz scroll delivered 19% more
+frames. Battery current in an A/B/A run did not rise (1313 / 1266 /
+1243 mW), because the CPUs spent less time at their top frequencies.
+The hint itself has not been built or measured yet.
+
+The phone has `vendor.powerhal.disp.idle_support=false`, so the power HAL's
+`InteractionHandler` calls `DoHint("INTERACTION", duration)` and that
+duration replaces each action's `Duration`: at least 1400 ms
+(`vendor.powerhal.interaction.min`), renewed by every user-activity boost
+while a finger is down. The floor therefore covers a drag and most of the
+fling after it, like the CPU boosts beside it. The node resets to 35 (no
+floor) when the HAL starts.
+
+## Governor: sugov_ext
+
+After boot the tree selects `sugov_ext` (`cpufreq_sugov_ext.ko`), MediaTek's
+schedutil, as stock OS3 does. Its frequency choice uses the non-linear OPP
+capacity table that `scheduler.ko` already applies to task placement and
+frequency invariance, adds a per-cluster adaptive margin, and votes the DSU
+frequency. Plain `schedutil` maps utilisation to frequency linearly with a
+fixed 25% margin. `schedutil` is written first so a failed `sugov_ext` write
+leaves the previous behaviour rather than the boot-time `performance`
+governor.
+
+Stock pairs `sugov_ext` with a PELT multiplier of 4
+(`vendor/etc/init/hw/init.cgroup.rc`, `on post-fs-data`), so utilisation
+ramps with an 8 ms half-life instead of 32 ms and the governor sees load
+changes four times sooner. The tree writes the same value at the same
+stage.
+
+## Camera: C2PS
+
+Stock does not boost the camera with fixed frequencies. The camera HAL
+(`libmtkcam_c2psperfctrl.so`) reports its per-frame tasks and processing
+times to `mtk_c2ps.ko` through `/proc/c2ps/c2ps_ioctl`. Judging by its
+parameters (uclamp up/down margins, a processing-time window; no source is
+available), C2PS adjusts those tasks' uclamp to the frame time. Which policy
+runs is chosen per stream configuration by
+`odm/etc/camera/xiaomi/MiCamCPUControl.xml` through MediaTek perf locks,
+which `powercontable.xml` maps to `/sys/module/mtk_c2ps/parameters/*`.
+
+This ROM's `libmtkperf_client` only logs perf locks, so the HAL's C2PS
+task reports arrive but the policy parameters stay at the module's
+defaults. The tree writes the rear-camera video policy
+(`DefaultCPUPolicy_30FPS`; the 4K 30 fps and 720p video modes use the
+same values) once at boot completion. Not replicated: the per-mode
+switches (1080p/4K 60 fps use a 16 ms background window and 13% idle
+alert), the video modes' CPU frequency caps (2.0/2.5 GHz) and core_ctl
+settings, and the front and photo modes, which use FPSGO instead.
+
+The uclamp values C2PS sets are per task and are no longer capped by
+`sched_util_clamp_min` (see above).
+
+## Cache QoS
+
+`cpuqos_v3.ko` keeps L3 partitioning disabled until `1` is written to
+`/sys/devices/system/cpu/cpuqos/cpuqos_boot_complete`, which stock and the
+Galaga tree do at boot completion. The tree now does the same.
+
+## FPSGO and the GPU frame target
+
+GED's frame-based GPU DVFS (`ged_dvfs_fb_gpu_dvfs`) sets the frequency to a
+frame's busy cycles over its target time. The per-queue target comes only
+from FPSGO (`fstb` calls `ged_kpi_set_target_FPS_margin` from FBT's
+per-frame path); otherwise GED uses the panel refresh period, which the
+display driver reports. A game running at 30 or 60 fps on the 120 Hz panel
+was therefore clocked to finish each frame in 8.3 ms.
+
+FPSGO learns about a queue only from libgui's `FPSGO_BQID`,
+`FPSGO_QUEUE_CONNECT`, `FPSGO_DEQUEUE` and `FPSGO_QUEUE` events on
+`/proc/perfmgr/perf_ioctl`. MediaTek's libgui sends them from every
+producer, and MediaTek's vendor policy grants apps, surfaceflinger and the
+media and camera servers those ioctls, but AOSP's libgui did not, so
+`fpsgo.ko` was loaded and idle. The frameworks/native fork now sends them
+under `support_mtk_fpsgo`, using the GED KPI window ID as FPSGO's buffer ID
+so FPSGO's target reaches the same GED queue.
+
+FPSGO only tracks a queue unless it controls it. Stock's MediaTek power HAL
+turns control on per game (`fpsgo_control_pid`). Here neither the power HAL
+nor anything with write access to `sysfs_fpsgo` knows the game's pid
+(GameManagerService has only the uid, and reading the top-app cgroup when
+`GAME` arrives races the framework's asynchronous cgroup moves), so the
+`GAME` hint sets the global `/sys/kernel/fpsgo/composer/fpsgo_control`
+while a game is in front. FBT then sizes the game's render-thread CPU boost
+per frame and GED gets the game's own target.
+
+The global switch also covers other processes' queues while a game is in
+front. HWUI queues stay out because HWUI tags its RenderThread with
+`FPSGO_SWAP_BUFFER` on every swap (frameworks/base, same
+`support_mtk_fpsgo` flag) and FPSGO leaves HWUI queues to their ADPF
+sessions (`control_hwui` is 0). Main-thread producers, queues that do not
+feed SurfaceFlinger and media producers are bypassed as well. What remains
+controlled besides the game is another process's non-HWUI GL or camera
+producer running at the same time.
+
+FBT applies its CPU boost by writing the render thread's own uclamp.min and
+uclamp.max with `sched_setattr` (`fbt_set_per_task_cap`), the same per-task
+values libperfmgr writes for ADPF sessions, so on a game that uses ADPF the
+two would overwrite each other every frame. The tree writes
+`/sys/kernel/fpsgo/common/perfserv_ta` (top-app boosting is handled
+elsewhere), which turns FBT's uclamp and VIP writes off
+(`fbt_switch_uclamp_onoff`); FBT's frame path, and with it the GED target,
+keeps running. CPU boosting stays with ADPF, schedutil and the `GAME`
+floors, as before FPSGO was fed.
+
+FBT also queues commands for the MediaTek power HAL (`fpsgo_sentcmd`, read
+back with `FPSGO_GET_CMD`). With the defaults above only one kind is still
+sent: `FPSGO_SET_SCHED_RATE`, whenever a controlled render starts or stops
+(`fbt_set_down_throttle_locked`). Nothing here reads the queue, so each
+command would stay allocated until reboot; the tree turns it off with
+`/sys/kernel/fpsgo/fbt/enable_switch_down_throttle`. Rescue boosts, which
+would queue top-app boost commands, are off by default (`rescue_enable`).
+
+Check on a device: `cat /sys/kernel/fpsgo/fstb/fpsgo_status` lists the queues
+FPSGO sees; in a game, `ged` trace marks show the target FPS.
+
+## Optional battery saver CPU cap
+
+Battery saver sends the `LOW_POWER` mode, which power-libperfmgr turns into
+the `LOW_POWER` hint. That hint only sets `vendor.powerhal.battery_saver=1`;
+it caps nothing by itself. Settings > Battery saver > Limit CPU speed
+(`persist.sys.battery_saver_cpu_cap`, default off) picks 90, 80, 70, 60 or
+50% of each cluster's top frequency (A78 2.5 GHz, A55 2.0 GHz), and
+`init.mt6878.power.rc` writes that cap to `scaling_max_freq` while both are
+set. Saver off, or the limit set to off, writes the nodes back to 9999999.
+No powerhint.json hint writes the max-frequency nodes, and nothing in the
+stock vendor image does either, so the reset can't clear another cap.
+The default is off because caps bind during scrolling (18% of samples at
+2.1 GHz or more on policy4 in the 2026-10-24 trace).
+
+## Returning to the larger boost profile
+
+1. Put back the configured values from the table: the two rc lines, the
+   `UclampTAMin` node values `0, 40, 100` with its actions, and the
+   `UclampFGMin` node values `0, 10, 30` with its action.
+2. Raise `GROUP_BOOST_LIMIT` in `tests/test_powerhint.py` to match.
+
+Expect more speed in the camera, on-device AI and touch response, and more
+battery use.

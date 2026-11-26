@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     SPDX-FileCopyrightText: The LineageOS Project
+     SPDX-License-Identifier: Apache-2.0
+-->
+<resources>
+    <!-- Whether usage of the proximity sensor during doze is supported.
+         Off: proximity is the Elliptic ultrasound sensor, which reads "near"
+         when the phone lies flat or the speaker plays. While a notification
+         (an incoming call) pulses, "near" makes SystemUI ignore every touch,
+         and in AOD it keeps the ultrasound running and lowers speaker gain. -->
+    <bool name="doze_proximity_sensor_supported">false</bool>
+
+    <!-- Fade on the power button instead of the wave. -->
+    <bool name="config_powerButtonFadeReveal">true</bool>
+</resources>

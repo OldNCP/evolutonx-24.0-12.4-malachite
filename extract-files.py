@@ -1,0 +1,279 @@
+#!/usr/bin/env -S PYTHONPATH=../../../tools/extract-utils python3
+#
+# SPDX-FileCopyrightText: 2024 The LineageOS Project
+# SPDX-License-Identifier: Apache-2.0
+#
+
+from extract_utils.fixups_blob import (
+    BlobFixupCtx,
+    File,
+    blob_fixup,
+    blob_fixups_user_type,
+)
+
+from extract_utils.main import (
+    ExtractUtils,
+    ExtractUtilsModule,
+)
+
+from extract_utils.fixups_lib import (
+    lib_fixup_remove_arch_suffix,
+    lib_fixups_user_type,
+    libs_clang_rt_ubsan,
+)
+
+from extract_utils.tools import (
+    llvm_objdump_path,
+)
+
+from extract_utils.utils import (
+    run_cmd,
+)
+
+from blob_fixups_camera import (
+    GRAPHIC_BUFFER_FIXUPS,
+    blob_fixup_camera_graphic_buffer_size,
+)
+
+namespace_imports = [
+    'device/xiaomi/malachite',
+    'hardware/mediatek',
+    'hardware/xiaomi',
+]
+
+lib_fixups: lib_fixups_user_type = {
+    libs_clang_rt_ubsan: lib_fixup_remove_arch_suffix,
+}
+
+def lib_fixup_vendor_suffix(lib: str, partition: str, *args, **kwargs):
+    return f'{lib}_{partition}' if partition == 'vendor' else None
+
+def lib_fixup_camera_system_ext_suffix(lib: str, partition: str, *args, **kwargs):
+    return f'{lib}_system_ext' if partition == 'system_ext' else None
+
+def blob_fixup_graphic_buffer_size(
+    ctx: BlobFixupCtx,
+    file: File,
+    file_path: str,
+    *args,
+    **kwargs,
+):
+    for line in run_cmd(
+        [
+            llvm_objdump_path,
+            '--disassemble-all',
+            file_path,
+        ]
+    ).splitlines():
+        line = line.split(maxsplit=5)
+        if len(line) != 6:
+            continue
+
+        # The size of GraphicBuffer changed from 0x100 to 0xd30
+        offset, _, instruction, register, value, _ = line
+        if instruction == 'mov' and register[:-1] == 'w0' and value == '#0x100':
+            with open(file_path, 'rb+') as f:
+                f.seek(int(offset[:-1], 16))
+                f.write(b'\x00\xa6\x81\x52')  # AArch64 mov w0, #0xd30
+
+lib_fixups: lib_fixups_user_type = {
+    **lib_fixups,
+    'vendor.mediatek.hardware.camera.isphal-V1-ndk': lib_fixup_camera_system_ext_suffix,
+    (
+        'libneuron_graph_delegate.mtk',
+        'libtflite_mtk',
+        'vendor.mediatek.hardware.apuware.utils-V1-ndk',
+    ): lib_fixup_vendor_suffix,
+}
+
+blob_fixups: blob_fixups_user_type = {
+    tuple(GRAPHIC_BUFFER_FIXUPS): blob_fixup()
+        .call(blob_fixup_camera_graphic_buffer_size),
+
+    'system_ext/lib64/vendor.mediatek.hardware.camera.isphal-V1-ndk.so': blob_fixup()
+        .replace_needed('android.hardware.graphics.common-V6-ndk.so', 'android.hardware.graphics.common-V7-ndk.so'),
+
+    # Newest soundtrigger3: its types share android.media.audio.common.types
+    # with libaudio_aidl_conversion_common_ndk (V5 on Android 17).
+     'vendor/lib64/hw/android.hardware.soundtrigger3-impl.so': blob_fixup()
+        .replace_needed('android.hardware.soundtrigger3-V1-ndk.so', 'android.hardware.soundtrigger3-V4-ndk.so'),
+
+     'vendor/lib64/hw/audio.primary.mt6878.so': blob_fixup()
+        .replace_needed('libtinyxml2.so', 'libtinyxml2-v34.so')
+        .replace_needed('libalsautils.so', 'libalsautils-stock.so')
+        .binary_regex_replace(b'A2dpsuspendonly', b'A2dpSuspended\x00\x00')
+        .binary_regex_replace(b'BTAudiosuspend', b'A2dpSuspended\x00')
+        .replace_needed('vendor.mediatek.hardware.bluetooth.audio-V1-ndk.so', 'vendor.mediatek.hardware.bluetooth.audio-V1-ndk_stock.so'),
+
+     'vendor/lib64/libcamera2ndk_vendor-stock.so': blob_fixup()
+        .replace_needed('android.frameworks.cameraservice.device-V1-ndk.so', 'android.frameworks.cameraservice.device-V3-ndk.so')
+        .replace_needed('android.frameworks.cameraservice.service-V1-ndk.so', 'android.frameworks.cameraservice.service-V3-ndk.so'),
+
+     'vendor/lib64/libmiface.so': blob_fixup()
+        .replace_needed('libcamera2ndk_vendor.so', 'libcamera2ndk_vendor-stock.so'),
+
+     'vendor/lib64/libsi_sixth.so': blob_fixup()
+        .replace_needed('audio.primary.mediatek.so', 'audio.primary.mt6878.so'),
+
+     ('vendor/etc/libnfc-tms.conf', 'odm/etc/libnfc-tms_thn31f.conf', 'odm/etc/libnfc-tms_thn31s.conf'): blob_fixup()
+        .regex_replace('NFC_DEBUG_ENABLED=1', 'NFC_DEBUG_ENABLED=0'),
+
+    # Expert sRGB (render intent 0x10b, both colour spaces) looks more saturated here than
+    # on HyperOS. Lower its colour engine saturation gain from 50 to 35, tuned by a tester
+    # against stock by eye; the other modes keep the stock values.
+     ('vendor/etc/o16u_36_02_0b_dsc_vdo_pq.xml', 'vendor/etc/o16u_42_02_0a_dsc_vdo_pq.xml',
+      'vendor/etc/o16u_42_02_0d_dsc_vdo_pq.xml', 'vendor/etc/o16u_44_0f_0c_dsc_vdo_pq.xml'): blob_fixup()
+        .regex_replace(r'(Name="expert_srgb"(?:(?!</Mode>)[\s\S])*?FeatureID="0x2500"[^\n]*? SatGain=")50"', r'\g<1>35"'),
+
+     'vendor/etc/init/android.hardware.graphics.composer@3.2-service.rc': blob_fixup()
+        .regex_replace('ServiceCapacityLow', 'ProcessCapacityHigh HighPerformance'),
+
+     'vendor/etc/init/vendor.xiaomi.sensor.citsensorservice.aidl.rc': blob_fixup()
+        .add_line_if_missing('    task_profiles ServiceCapacityLow'),
+
+    ('vendor/lib64/hw/vendor.mediatek.hardware.pq_aidl-impl.so', 'odm/bin/hw/vendor.xiaomi.sensor.citsensorservice.aidl'): blob_fixup()
+        .replace_needed('libtinyxml2.so', 'libtinyxml2-v34.so')
+        .add_needed('libui_shim.so'),
+
+    'vendor/lib64/libmicamera_hal_core.so': blob_fixup()
+        .add_needed('libui_shim.so')
+        .add_needed('libprocessgroup_shim.so')
+        .replace_needed('libtinyxml2.so', 'libtinyxml2-v34.so')
+        .call(blob_fixup_graphic_buffer_size),
+
+    ('vendor/lib64/lib3a.ae.stat.so', 'vendor/lib64/libarmnn_ndk.mtk.vndk.so'): blob_fixup()
+        .add_needed('liblog.so'),
+
+    'vendor/lib64/libultrahdr_malachite.so': blob_fixup()
+        .replace_needed('libjpegencoder.so', 'libjpegencoder_malachite.so')
+        .replace_needed('libjpegdecoder.so', 'libjpegdecoder_malachite.so'),
+
+    ('odm/lib64/camera/plugins/com.xiaomi.plugin.gainmap.so',
+     'odm/lib64/camera/plugins/com.xiaomi.plugin.jpegrAggr.so',
+     'vendor/lib64/libmtkcam_hwnode.jpegnode.so'): blob_fixup()
+        .replace_needed('libultrahdr.so', 'libultrahdr_malachite.so'),
+
+
+    ('vendor/lib64/hw/vendor.mediatek.hardware.pq_aidl-impl.so',
+     'vendor/lib64/libpqxmlflagparser.so',
+     'vendor/lib64/libpqxmlparser.so',
+     'vendor/lib64/librt_extamp_intf.so',
+     'vendor/lib64/libsilkybrightnesscore.so',
+     'vendor/lib64/libmicamera_aidl_provider.so',
+     'vendor/lib64/libmmlpqImpl.so'): blob_fixup()
+        .replace_needed('libtinyxml2.so', 'libtinyxml2-v34.so'),
+
+    ('vendor/lib64/libneuralnetworks_sl_driver_mtk_prebuilt.so',
+     'vendor/lib64/libTrueSight.so',
+     'vendor/lib64/libwa_widelens_undistort.so',
+     'vendor/lib64/libMiPhotoFilter.so',
+     'vendor/lib64/libMiVideoFilter.so'): blob_fixup()
+        .clear_symbol_version('AHardwareBuffer_allocate')
+        .clear_symbol_version('AHardwareBuffer_createFromHandle')
+        .clear_symbol_version('AHardwareBuffer_describe')
+        .clear_symbol_version('AHardwareBuffer_getNativeHandle')
+        .clear_symbol_version('AHardwareBuffer_isSupported')
+        .clear_symbol_version('AHardwareBuffer_lock')
+        .clear_symbol_version('AHardwareBuffer_lockPlanes')
+        .clear_symbol_version('AHardwareBuffer_release')
+        .clear_symbol_version('AHardwareBuffer_unlock'),
+
+    ('vendor/lib64/libcameraopt.so',
+     'vendor/lib64/libcam.hal3a.so',
+     'vendor/lib64/libcam.hal3a.ctrl.so',
+     'vendor/lib64/libmtkcam_taskmgr.so',
+     'vendor/lib64/hw/hwcomposer.mtk_common.so'): blob_fixup()
+        .add_needed('libprocessgroup_shim.so'),
+
+    ('odm/lib64/camera/plugins/com.xiaomi.plugin.capdepth.so', 'vendor/lib64/libalNN.so', 'vendor/lib64/libmiphone_preview_bokeh.so', 'vendor/lib64/libmiphone_preview_mdbokeh.so'): blob_fixup()
+        .replace_needed('libomp.so', 'libomp_vendor.so'),
+
+    'odm/lib64/libHISCppAlgos_odm.so': blob_fixup()
+        .replace_needed('libhis_motion_tracker.so', 'libhis_motion_tracker_odm.so'),
+
+    ('odm/lib64/camera/plugins/com.xiaomi.plugin.mihisv1.so',
+     'odm/lib64/camera/plugins/com.xiaomi.plugin.mihisv2.so',
+     'odm/lib64/camera/plugins/com.xiaomi.plugin.mihisv3.so'): blob_fixup()
+        .replace_needed('libHISCppAlgos.so','libHISCppAlgos_odm.so'),
+
+    'vendor/lib64/hw/audio.bluetooth.mt6878.so': blob_fixup()
+        .replace_needed('libbluetooth_audio_session.so', 'libbluetooth_audio_session_stock.so'),
+
+    'vendor/lib64/libbluetooth_audio_session_stock.so': blob_fixup()
+        .replace_needed('libbluetooth_audio_session_aidl.so', 'libbluetooth_audio_session_aidl_stock.so'),
+
+    # hardware/mediatek builds vendor.mediatek.hardware.bluetooth.audio-V1-ndk and vendor.mediatek.hardware.netdagent@1.0 from source on lineage-24.0 and
+    # installs them in vendor/lib64 under the same names. Stock's bluetooth.audio
+    # V1 matches none of its frozen versions, so the stock blobs keep their own
+    # copies, renamed _stock like the Bluetooth session libraries.
+    'vendor/lib64/vendor.mediatek.hardware.bluetooth.audio-V1-ndk_stock.so': blob_fixup()
+        .replace_needed('android.hardware.audio.common-V1-ndk.so', 'android.hardware.audio.common-V2-ndk.so'),
+
+    ('vendor/lib64/android.hardware.bluetooth.audio-impl-mediatek.so',
+     'vendor/lib64/libbluetooth_audio_session_aidl_mtk.so'): blob_fixup()
+        .replace_needed('vendor.mediatek.hardware.bluetooth.audio-V1-ndk.so', 'vendor.mediatek.hardware.bluetooth.audio-V1-ndk_stock.so'),
+
+    ('vendor/lib64/libmtk-ril.so', 'vendor/lib64/libmtkmipc-ril.so'): blob_fixup()
+        .replace_needed('vendor.mediatek.hardware.netdagent@1.0.so', 'vendor.mediatek.hardware.netdagent@1.0_stock.so'),
+
+    ('vendor/bin/hw/android.hardware.graphics.allocator-V2-service-mediatek',
+     'vendor/lib64/egl/libGLES_mali.so',
+     'vendor/lib64/hw/android.hardware.graphics.allocator-V2-mediatek.so',
+     'vendor/lib64/hw/android.hardware.graphics.mapper@4.0-impl-mediatek.so',
+     'vendor/lib64/hw/mapper.mediatek.so',
+     'vendor/lib64/libcodec2_vpp_AIMEMC_plugin.so',
+     'vendor/lib64/libcodec2_vpp_AISR_plugin.so',
+     'vendor/lib64/libmtkcam_grallocutils.so',
+     'vendor/lib64/libmtkcam_grallocutils_aidlv1helper.so',
+     'vendor/lib64/vendor.mediatek.hardware.camera.isphal-V1-ndk.so',
+     'vendor/lib64/vendor.mediatek.hardware.pq_aidl-V2-ndk.so',
+     'vendor/lib64/vendor.mediatek.hardware.pq_aidl-V4-ndk.so',
+     'vendor/lib64/vendor.mediatek.hardware.pq_aidl-V7-ndk.so'): blob_fixup()
+        .replace_needed('android.hardware.graphics.common-V4-ndk.so', 'android.hardware.graphics.common-V7-ndk.so')
+        .replace_needed('android.hardware.graphics.allocator-V1-ndk.so', 'android.hardware.graphics.allocator-V2-ndk.so'),
+
+    'vendor/lib64/c2.dolby.client.so': blob_fixup()
+        .add_needed('libcodec2_hidl_shim.so'),
+
+    ('vendor/lib64/c2.dolby.hevc.dec.so', 'vendor/lib64/c2.dolby.hevc.sec.dec.so'): blob_fixup()
+        .add_needed('libcodec2_shim.so'),
+
+    'vendor/lib64/libcodec2_fsr.so': blob_fixup()
+        .call(blob_fixup_graphic_buffer_size)
+        .replace_needed('android.hardware.graphics.common-V4-ndk.so', 'android.hardware.graphics.common-V7-ndk.so')
+        .replace_needed('android.hardware.graphics.allocator-V1-ndk.so', 'android.hardware.graphics.allocator-V2-ndk.so'),
+
+    'vendor/lib64/libmialgoengine.so': blob_fixup()
+        .add_needed('libprocessgroup_shim.so')
+        .call(blob_fixup_graphic_buffer_size),
+
+    'vendor/lib64/libpqconfig.so': blob_fixup()
+        .replace_needed('android.hardware.sensors-V2-ndk.so', 'android.hardware.sensors-V3-ndk.so'),
+
+    # Android 17 adds external/libmnl (netlink). LineageOS devices also rename
+    # libformatter on lineage-24.0, against a Car library of that name.
+    ('vendor/lib64/libcodec2_mtk_vdec.so', 'vendor/lib64/libcodec2_mtk_venc.so'): blob_fixup()
+        .replace_needed('libformatter.so', 'libformatter_mtk.so'),
+
+    'vendor/bin/mnld': blob_fixup()
+        .replace_needed('libmnl.so', 'libmnl_mtk.so'),
+
+    # Android 17 dropped android.frameworks.displayservice; surfaceflinger serves
+    # it as lineage.frameworks.displayservice (register_displayservice). The
+    # camera blobs keep stock's client library and its C++ symbols; only its
+    # interface names change (same length), not its file name.
+    'vendor/lib64/android.frameworks.displayservice@1.0.so': blob_fixup()
+        .binary_regex_replace(rb'android(\.frameworks\.displayservice@1\.0(?:::|\x00))', rb'lineage\1'),
+}  # fmt: skip
+
+module = ExtractUtilsModule(
+    'malachite',
+    'xiaomi',
+    blob_fixups=blob_fixups,
+    lib_fixups=lib_fixups,
+    namespace_imports=namespace_imports,
+)
+
+if __name__ == '__main__':
+    utils = ExtractUtils.device(module)
+    utils.run()

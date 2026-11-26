@@ -1,0 +1,467 @@
+/*
+ * Copyright (C) 2022 The LineageOS Project
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#define LOG_TAG "UdfpsHandler.malachite"
+
+#include <aidl/android/hardware/biometrics/fingerprint/BnFingerprint.h>
+#include <android-base/logging.h>
+#include <android-base/properties.h>
+#include <android-base/unique_fd.h>
+
+#include <poll.h>
+#include <sys/ioctl.h>
+#include <chrono>
+#include <fstream>
+#include <mutex>
+#include <thread>
+
+#include "UdfpsHandler.h"
+#include "mi_disp.h"
+#include "xiaomi_touch.h"
+
+#define COMMAND_NIT 10
+#define TARGET_BRIGHTNESS_OFF 0
+#define TARGET_BRIGHTNESS_1000NIT 1
+#define TARGET_BRIGHTNESS_110NIT 6
+
+#define LOW_BRIGHTNESS_THRESHHOLD 100
+
+#define COMMAND_FOD_PRESS_STATUS 1
+#define PARAM_FOD_PRESSED 1
+#define PARAM_FOD_RELEASED 0
+
+#define FOD_STATUS_OFF 0
+#define FOD_STATUS_ON 1
+
+#define TOUCH_DEV_PATH "/dev/xiaomi-touch"
+#define TOUCH_ID 0
+#define TOUCH_MAGIC 'T'
+#define TOUCH_IOC_SET_CUR_VALUE _IO(TOUCH_MAGIC, SET_CUR_VALUE)
+#define TOUCH_IOC_GET_CUR_VALUE _IO(TOUCH_MAGIC, GET_CUR_VALUE)
+
+#define DISP_FEATURE_PATH "/dev/mi_display/disp_feature"
+
+#define FOD_PRESS_STATUS_PATH "/sys/class/touch/touch_dev/fod_press_status"
+
+using ::aidl::android::hardware::biometrics::fingerprint::AcquiredInfo;
+
+namespace {
+
+static bool readBool(int fd) {
+    char c;
+    int rc;
+
+    rc = lseek(fd, 0, SEEK_SET);
+    if (rc) {
+        LOG(ERROR) << "failed to seek fd, err: " << rc;
+        return false;
+    }
+
+    rc = read(fd, &c, sizeof(char));
+    if (rc != 1) {
+        LOG(ERROR) << "failed to read bool from fd, err: " << rc;
+        return false;
+    }
+
+    return c != '0';
+}
+
+static disp_event_resp* parseDispEvent(int fd) {
+    static char event_data[1024] = {0};
+    ssize_t size = read(fd, event_data, sizeof(event_data));
+
+    if (size < 0) {
+        LOG(ERROR) << "read fod event failed";
+        return nullptr;
+    }
+    // FOD events carry one payload byte after the header; without it data[0]
+    // would be left over from the previous event.
+    if (size < sizeof(struct disp_event) + 1) {
+        LOG(ERROR) << "Invalid event size " << size << ", expect at least "
+                   << sizeof(struct disp_event) + 1;
+        return nullptr;
+    }
+
+    return (struct disp_event_resp*)&event_data[0];
+}
+
+}  // anonymous namespace
+
+class XiaomiMalachiteUdfpsHandler : public UdfpsHandler {
+  public:
+    void init(fingerprint_device_t* device) {
+        mDevice = device;
+        touch_fd_ = android::base::unique_fd(open(TOUCH_DEV_PATH, O_RDWR));
+        disp_fd_ = android::base::unique_fd(open(DISP_FEATURE_PATH, O_RDWR));
+
+        std::string fpVendor = android::base::GetProperty("persist.vendor.sys.fp.vendor", "none");
+        LOG(DEBUG) << __func__ << "fingerprint vendor is: " << fpVendor;
+        isFpcFod = fpVendor == "fpc_fod";
+
+        // Thread to notify fingeprint hwmodule about fod presses
+        std::thread([this]() {
+            int fd = open(FOD_PRESS_STATUS_PATH, O_RDONLY);
+            if (fd < 0) {
+                LOG(ERROR) << "failed to open " << FOD_PRESS_STATUS_PATH << " , err: " << fd;
+                return;
+            }
+
+            struct pollfd fodPressStatusPoll = {
+                    .fd = fd,
+                    .events = POLLERR | POLLPRI,
+                    .revents = 0,
+            };
+
+            while (true) {
+                int rc = poll(&fodPressStatusPoll, 1, -1);
+                if (rc < 0) {
+                    LOG(ERROR) << "failed to poll " << FOD_PRESS_STATUS_PATH << ", err: " << rc;
+                    continue;
+                }
+                bool pressed = readBool(fd);
+                if (pressed) {
+                    onPress(true);
+                } else {
+                    onTouchRelease();
+                }
+            }
+        }).detach();
+
+        // Thread to listen for fod ui changes
+        std::thread([this]() {
+            int fd = open(DISP_FEATURE_PATH, O_RDWR);
+            if (fd < 0) {
+                LOG(ERROR) << "failed to open " << DISP_FEATURE_PATH << " , err: " << fd;
+                return;
+            }
+
+            // Register for FOD events
+            disp_event_req req;
+            req.base.flag = 0;
+            req.base.disp_id = MI_DISP_PRIMARY;
+            req.type = MI_DISP_EVENT_FOD;
+            ioctl(fd, MI_DISP_IOCTL_REGISTER_EVENT, &req);
+
+            struct pollfd dispEventPoll = {
+                    .fd = fd,
+                    .events = POLLIN,
+                    .revents = 0,
+            };
+
+            while (true) {
+                int rc = poll(&dispEventPoll, 1, -1);
+                if (rc < 0) {
+                    LOG(ERROR) << "failed to poll " << DISP_FEATURE_PATH << ", err: " << rc;
+                    continue;
+                }
+
+                struct disp_event_resp* response = parseDispEvent(fd);
+                if (response == nullptr) {
+                    continue;
+                }
+
+                if (response->base.type != MI_DISP_EVENT_FOD) {
+                    LOG(ERROR) << "unexpected display event: " << response->base.type;
+                    continue;
+                }
+
+                int value = response->data[0];
+                LOG(DEBUG) << "received data: " << std::bitset<8>(value);
+
+                bool localHbmUiReady = value & LOCAL_HBM_UI_READY;
+                bool requestLowBrightnessCapture = value & FOD_LOW_BRIGHTNESS_CAPTURE;
+
+                mDevice->extCmd(mDevice, COMMAND_NIT,
+                                localHbmUiReady
+                                        ? (requestLowBrightnessCapture ? TARGET_BRIGHTNESS_110NIT
+                                                                       : TARGET_BRIGHTNESS_1000NIT)
+                                        : TARGET_BRIGHTNESS_OFF);
+            }
+        }).detach();
+    }
+
+    void onFingerDown(uint32_t x, uint32_t y, float /*minor*/, float /*major*/) {
+        LOG(DEBUG) << __func__ << "x: " << x << ", y: " << y;
+
+        {
+            std::lock_guard<std::mutex> lock(fodLock_);
+            // SystemUI's finger-down can arrive after the match it belongs to has
+            // finished (10 ms after a screen-off unlock). Its finger-up is then dropped,
+            // so arming FOD for it left the white spot lit until the screen turned off.
+            if (!operationActive_) {
+                LOG(INFO) << "FOD press ignored (no operation)";
+                return;
+            }
+        }
+
+        /*
+         * On fpc_fod devices, the waiting for finger message is not reliably sent...
+         * The finger down message is only reliably sent when the screen is turned off, so enable
+         * fod_status better late than never.
+         */
+        if (isFpcFod) {
+            setFodStatus(FOD_STATUS_ON);
+        }
+
+        // Ensure touchscreen is aware of the press state, ideally this is not needed
+        setFingerDown(true);
+
+        // In apps the touch IC reports no FOD press, so the panel's spot never lit and
+        // the sensor never captured. SystemUI's press drives both, like the touch IC's.
+        onPress(false);
+    }
+
+    void onFingerUp() {
+        LOG(DEBUG) << __func__;
+        // Ensure touchscreen is aware of the press state, ideally this is not needed
+        setFingerDown(false);
+        onFrameworkRelease();
+    }
+
+    void onAcquired(int32_t result, int32_t vendorCode) {
+        LOG(DEBUG) << __func__ << " result: " << result << " vendorCode: " << vendorCode;
+        switch (static_cast<AcquiredInfo>(result)) {
+            case AcquiredInfo::GOOD:
+            case AcquiredInfo::PARTIAL:
+            case AcquiredInfo::INSUFFICIENT:
+            case AcquiredInfo::SENSOR_DIRTY:
+            case AcquiredInfo::TOO_SLOW:
+            case AcquiredInfo::TOO_FAST:
+            case AcquiredInfo::TOO_DARK:
+            case AcquiredInfo::TOO_BRIGHT:
+            case AcquiredInfo::IMMOBILE:
+            case AcquiredInfo::LIFT_TOO_SOON:
+                // Request to disable HBM already, even if the finger is still pressed
+                setFodStatus(FOD_STATUS_OFF);
+        }
+
+        /* vendorCode for goodix_fod devices:
+         * 21: waiting for finger
+         * 22: finger down
+         * 23: finger up
+         * On fpc_fod devices, the waiting for finger message is not reliably sent...
+         * The finger down message is only reliably sent when the screen is turned off, so enable
+         * fod_status better late than never.
+         */
+        if (!isFpcFod && vendorCode == 21) {
+            setFodStatus(FOD_STATUS_ON);
+        } else if (isFpcFod && vendorCode == 22) {
+            setFodStatus(FOD_STATUS_ON);
+        }
+    }
+
+    void onAuthenticationStarted() {
+        LOG(DEBUG) << __func__;
+        {
+            std::lock_guard<std::mutex> lock(fodLock_);
+            operationActive_ = true;
+        }
+        // goodix sends "waiting for finger" (21) only after a finished match, not after
+        // a cancelled one, so an app prompt after a PIN or face unlock never armed FOD.
+        if (!isFpcFod) {
+            setFodStatus(FOD_STATUS_ON);
+        }
+    }
+
+    void onEnrollmentStarted() {
+        LOG(DEBUG) << __func__;
+        std::lock_guard<std::mutex> lock(fodLock_);
+        operationActive_ = true;
+    }
+
+    void cancel() {
+        LOG(DEBUG) << __func__;
+        {
+            std::lock_guard<std::mutex> lock(fodLock_);
+            operationActive_ = false;
+        }
+        setFodStatus(FOD_STATUS_OFF);
+    }
+
+    void onOperationFinished() {
+        LOG(DEBUG) << __func__;
+        // The last enrollment sample has no GOOD acquired message, so nothing else turns
+        // the spot off here. SystemUI's release no longer reaches us once the client has
+        // finished: a finger kept down would leave the spot lit after it lifts, and the
+        // stale press would swallow the next one.
+        setFodStatus(FOD_STATUS_OFF);
+        bool wasDown;
+        {
+            std::lock_guard<std::mutex> lock(fodLock_);
+            wasDown = framePressed_ || touchPressed_;
+            framePressed_ = false;
+            touchPressed_ = false;
+            operationActive_ = false;
+        }
+        if (wasDown) {
+            // This runs on the HAL's callback thread, extCmd() must not be called from it.
+            std::thread([this]() { notifyReleased("operation finished"); }).detach();
+        }
+    }
+
+    void setIgnoreDisplayTouches(bool ignore) {
+        LOG(DEBUG) << __func__ << " ignore: " << ignore;
+        std::lock_guard<std::mutex> lock(fodLock_);
+        ignoreTouches_ = ignore;
+        applyTouchFodLocked();
+    }
+
+    void onDisplayOffChanged(bool off) {
+        LOG(DEBUG) << __func__ << " off: " << off;
+        std::lock_guard<std::mutex> lock(fodLock_);
+        displayOff_ = off;
+        applyTouchFodLocked();
+    }
+
+    void onKeyguardOperationChanged(bool keyguard) {
+        LOG(DEBUG) << __func__ << " keyguard: " << keyguard;
+        std::lock_guard<std::mutex> lock(fodLock_);
+        keyguardOp_ = keyguard;
+        applyTouchFodLocked();
+    }
+
+  private:
+    fingerprint_device_t* mDevice;
+    android::base::unique_fd touch_fd_;
+    android::base::unique_fd disp_fd_;
+    bool isFpcFod;
+
+    // Guards the FOD state and the local HBM requests, so a press handled by the
+    // fod_press_status thread cannot turn the spot back on after FOD was switched off.
+    std::mutex fodLock_;
+    // FOD as requested by the HAL and the framework's finger events.
+    bool fodRequested_ = false;
+    // FOD as set in the touch IC: off while SystemUI ignores display touches.
+    bool fodEnabled_ = false;
+    // SystemUI hides the UDFPS overlay but the HAL keeps authenticating, e.g. under
+    // the secure camera on the lockscreen. The touch IC would still turn presses on
+    // the sensor area (the shutter button) into fingerprint captures.
+    bool ignoreTouches_ = false;
+    // With the screen off or in AOD SystemUI also stops handling touches, but
+    // screen-off unlock needs the touch IC's FOD detection.
+    bool displayOff_ = false;
+    // The ignore state outlives the overlay that sent it: the lockscreen overlay's
+    // "ignore" on removal can arrive after BiometricPrompt's overlay asked for
+    // touches, which left FOD off in apps. Only the keyguard needs ignoring.
+    bool keyguardOp_ = false;
+    // A finger on the sensor as reported by the touch IC (fod_press_status) and by
+    // SystemUI. On the lockscreen both report the same press; the sensor is told once.
+    bool touchPressed_ = false;
+    bool framePressed_ = false;
+    std::chrono::steady_clock::time_point touchPressedAt_;
+    // An authentication or enrollment is running: from its start until it finishes or
+    // is cancelled. SystemUI's finger events only count while one is.
+    bool operationActive_ = false;
+
+    void onPress(bool fromTouch) {
+        {
+            std::lock_guard<std::mutex> lock(fodLock_);
+            // The touch driver can still report a press after FOD was switched off,
+            // e.g. a finger sliding over the sensor right after a successful match.
+            // Its release is then never reported, so the white spot would stay lit
+            // until the screen turns off. Only act on presses while FOD is armed.
+            if (!fodEnabled_) {
+                return;
+            }
+            // SystemUI always reports the release. The touch IC can lose it (see above),
+            // so only its recent press means this finger was already reported.
+            auto now = std::chrono::steady_clock::now();
+            bool reported;
+            if (fromTouch) {
+                reported = framePressed_;
+                touchPressed_ = true;
+                touchPressedAt_ = now;
+            } else {
+                reported = touchPressed_ && now - touchPressedAt_ < std::chrono::seconds(1);
+                framePressed_ = true;
+            }
+            setLocalHbm(true);
+            if (reported) {
+                return;
+            }
+        }
+        LOG(INFO) << "FOD pressed (" << (fromTouch ? "touch" : "framework") << ")";
+        // Outside the lock: the HAL may call back into onAcquired().
+        mDevice->extCmd(mDevice, COMMAND_FOD_PRESS_STATUS, PARAM_FOD_PRESSED);
+    }
+
+    void onTouchRelease() {
+        {
+            std::lock_guard<std::mutex> lock(fodLock_);
+            if (!touchPressed_) {
+                return;
+            }
+            touchPressed_ = false;
+            if (framePressed_) {
+                return;
+            }
+            setLocalHbm(false);
+        }
+        notifyReleased("touch");
+    }
+
+    void onFrameworkRelease() {
+        {
+            std::lock_guard<std::mutex> lock(fodLock_);
+            // The finger is off the sensor, whatever the touch IC still reports.
+            bool wasDown = framePressed_ || touchPressed_;
+            framePressed_ = false;
+            touchPressed_ = false;
+            if (!wasDown) {
+                return;
+            }
+            setLocalHbm(false);
+        }
+        notifyReleased("framework");
+    }
+
+    void notifyReleased(const char* source) {
+        LOG(INFO) << "FOD released (" << source << ")";
+        mDevice->extCmd(mDevice, COMMAND_FOD_PRESS_STATUS, PARAM_FOD_RELEASED);
+    }
+
+    void setLocalHbm(bool on) {
+        disp_local_hbm_req req;
+        req.base.flag = 0;
+        req.base.disp_id = MI_DISP_PRIMARY;
+        req.local_hbm_value =
+                on ? LHBM_TARGET_BRIGHTNESS_WHITE_1000NIT : LHBM_TARGET_BRIGHTNESS_OFF_FINGER_UP;
+        ioctl(disp_fd_.get(), MI_DISP_IOCTL_SET_LOCAL_HBM, &req);
+    }
+
+    void applyTouchFodLocked() {
+        bool on = fodRequested_ && (!(ignoreTouches_ && keyguardOp_) || displayOff_);
+        fodEnabled_ = on;
+        if (!on) {
+            setLocalHbm(false);
+        }
+        int buf[MAX_BUF_SIZE] = {TOUCH_ID, Touch_Fod_Enable, on ? 1 : 0};
+        ioctl(touch_fd_.get(), TOUCH_IOC_SET_CUR_VALUE, &buf);
+    }
+
+    void setTouchFod(bool on) {
+        std::lock_guard<std::mutex> lock(fodLock_);
+        fodRequested_ = on;
+        applyTouchFodLocked();
+    }
+
+    void setFodStatus(int value) { setTouchFod(value == FOD_STATUS_ON); }
+
+    void setFingerDown(bool pressed) { setTouchFod(pressed); }
+};
+
+static UdfpsHandler* create() {
+    return new XiaomiMalachiteUdfpsHandler();
+}
+
+static void destroy(UdfpsHandler* handler) {
+    delete handler;
+}
+
+extern "C" UdfpsHandlerFactory UDFPS_HANDLER_FACTORY = {
+        .create = create,
+        .destroy = destroy,
+};

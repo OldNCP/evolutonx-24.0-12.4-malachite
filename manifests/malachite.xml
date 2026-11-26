@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+     Local manifest for building LineageOS 24.0 (Android 17) for malachite
+     entirely from the malachite-project forks. Copy to
+     .repo/local_manifests/malachite.xml after
+     `repo init -u https://github.com/LineageOS/android.git -b lineage-24.0`.
+
+     Every project uses its fork's lineage-24.0 branch. These carry changes
+     on top of their source:
+       device tree         chara's release + unmerged charger/module-loader
+                           fixes + WPA3 nl80211 version opt-in + the
+                           September 2026 audit, power, display and
+                           user-report fixes
+       wpa_supplicant_8    current LineageOS + CONFIG_DISABLE_WPA_VERSION_3
+       frameworks/native   chara's libgui ABI fix, rebased on current LineageOS,
+                           + PHH's MediaTek GED KPI frame timestamps (GPU
+                           DVFS), built only with libgui support_mtk_ged_kpi
+       frameworks/base     current LineageOS + PixelOS's FaceSense provider
+                           (face unlock, off unless ro.face.sense_service)
+       Settings, Telephony chara's native eSIM selection, rebased on current
+                           LineageOS; Telephony also keeps an accepted SIM
+                           switch running when the dialog closes
+       hardware/mediatek   current LineageOS + chara's Codec2 AIDL service,
+                           memtrack hardening and MediaTek wpa_supplicant
+                           driver-command library (lib_driver_cmd_mt66xx),
+                           built with the supplicant's flags
+       hardware/xiaomi     current LineageOS + chara's malachite eUICC,
+                           mtdservice, fingerprint and sensor fixes
+       sepolicy_vndr       current LineageOS + chara's six MT6878 labels
+                           and radio-property rules
+       vendor              chara + Aperture kept beside MiuiCamera
+                           (QR scanner)
+     Bluetooth          current LineageOS + the LE Audio fixes from
+                        lineage-23.2 (codec configs kept in step, pending
+                        Audio HAL check, CIG retry with a symmetric PHY).
+                        LineageOS change 507009 is merged in 24.0 itself.
+     malachite-kernel and vendor/mediatek/ims are chara's release state,
+     unmodified.
+     ParanoidSense is PixelOS's sixteen-qpr2, unmodified, under the name
+     lineage-24.0. Face unlock is stock's mifaced and the app is not in the
+     product; the project stays for vendor.aospa.biometrics.face, which
+     frameworks/base's FaceSense provider is built against.
+     hardware/dolby is crDroid's LunarisDolby branch reduced to its Dolby
+     control app; the Dolby DAX vendor stack comes from stock 208 in
+     vendor/xiaomi/malachite.
+
+     Kernel sources are built separately; see kernel_manifest-6.1.
+-->
+<manifest>
+  <remote name="malachite-project" fetch="https://github.com/malachite-project/" />
+
+  <!-- Device -->
+  <remove-project path="device/xiaomi/malachite" optional="true" />
+  <project path="device/xiaomi/malachite" name="android_device_xiaomi_malachite" remote="malachite-project" revision="lineage-24.0" />
+  <remove-project path="device/xiaomi/malachite-kernel" optional="true" />
+  <project path="device/xiaomi/malachite-kernel" name="android_device_xiaomi_malachite-kernel" remote="malachite-project" revision="lineage-24.0" />
+  <remove-project path="vendor/xiaomi/malachite" optional="true" />
+  <project path="vendor/xiaomi/malachite" name="proprietary_vendor_xiaomi_malachite" remote="malachite-project" revision="lineage-24.0" />
+
+  <!-- Platform -->
+  <remove-project path="hardware/mediatek" optional="true" />
+  <project path="hardware/mediatek" name="android_hardware_mediatek" remote="malachite-project" revision="lineage-24.0" />
+  <remove-project path="hardware/xiaomi" optional="true" />
+  <project path="hardware/xiaomi" name="android_hardware_xiaomi" remote="malachite-project" revision="lineage-24.0" />
+  <remove-project path="device/mediatek/sepolicy_vndr" optional="true" />
+  <project path="device/mediatek/sepolicy_vndr" name="android_device_mediatek_sepolicy_vndr" remote="malachite-project" revision="lineage-24.0" />
+  <remove-project path="vendor/mediatek/ims" optional="true" />
+  <project path="vendor/mediatek/ims" name="android_vendor_mediatek_ims" remote="malachite-project" revision="lineage-24.0" />
+
+  <!-- Overrides of LineageOS projects -->
+  <remove-project path="external/wpa_supplicant_8" optional="true" />
+  <project path="external/wpa_supplicant_8" name="android_external_wpa_supplicant_8" remote="malachite-project" revision="lineage-24.0" />
+  <remove-project path="frameworks/base" optional="true" />
+  <project path="frameworks/base" name="android_frameworks_base" remote="malachite-project" revision="lineage-24.0" groups="pdk-cw-fs,pdk-fs,sysui-studio" />
+  <remove-project path="frameworks/native" optional="true" />
+  <project path="frameworks/native" name="android_frameworks_native" remote="malachite-project" revision="lineage-24.0" />
+  <remove-project path="packages/apps/Settings" optional="true" />
+  <project path="packages/apps/Settings" name="android_packages_apps_Settings" remote="malachite-project" revision="lineage-24.0" />
+  <remove-project path="packages/apps/Glimpse" optional="true" />
+  <project path="packages/apps/Glimpse" name="android_packages_apps_Glimpse" remote="malachite-project" revision="lineage-24.0" />
+  <remove-project path="packages/services/Telephony" optional="true" />
+  <project path="packages/services/Telephony" name="android_packages_services_Telephony" remote="malachite-project" revision="lineage-24.0" />
+  <remove-project path="packages/modules/Bluetooth" optional="true" />
+  <project path="packages/modules/Bluetooth" name="android_packages_modules_Bluetooth" remote="malachite-project" revision="lineage-24.0" groups="pdk" />
+
+  <!-- Additions -->
+  <project path="packages/apps/ParanoidSense" name="android_packages_apps_ParanoidSense" remote="malachite-project" revision="lineage-24.0" />
+  <project path="hardware/dolby" name="android_hardware_dolby" remote="malachite-project" revision="lineage-24.0" />
+</manifest>

@@ -1,0 +1,716 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     SPDX-FileCopyrightText: The LineageOS Project
+     SPDX-License-Identifier: Apache-2.0
+-->
+<resources>
+    <!-- Enables or disables haptic effect when the text insertion/selection handle is moved
+         manually by the user. Off by default, since the expected haptic feedback may not be
+         available on some devices. -->
+    <bool name="config_enableHapticTextHandle">true</bool>
+
+    <!-- The lights HAL reads the unrounded backlight level from flashOnMs, so brightness
+         ramps move in single panel levels instead of the 8-bit colour's steps of 16. -->
+    <bool name="config_backlightHighPrecision">true</bool>
+
+    <!-- Headset plug-in arrives only as input switch events: mt6369-accdet reports through
+         an ALSA "Headset Jack" (snd_soc_jack_report), and no driver provides the
+         /sys/class/switch/h2w uevents that WiredAccessoryManager uses otherwise. Stock
+         framework-res sets this to true. -->
+    <bool name="config_useDevInputEventForAudioJack">true</bool>
+
+    <!-- The MediaTek audio HAL applies call and VoIP gain from its gain table at the index
+         MediaTek's audio policy passes as volumeStreamType/volumeDevice/volumeIndex. -->
+    <bool name="config_sendVoiceVolumeIndexToHal">true</bool>
+
+    <!-- Flag indicating whether we should enable the automatic brightness.
+         Software implementation will be used if config_hardware_auto_brightness_available is not set -->
+    <bool name="config_automatic_brightness_available">true</bool>
+
+    <!-- If this is true, the screen will come on when you unplug usb/power/whatever. -->
+    <bool name="config_unplugTurnsOnScreen">true</bool>
+
+    <!-- If true, the screen can be rotated via the accelerometer in all 4
+         rotations as the default behavior. Off, as on stock: with it on, apps
+         that ask for a sensor orientation (e.g. sensorPortrait in Facebook
+         Reels) turn upside down even with auto-rotate off. -->
+    <bool name="config_allowAllRotations">false</bool>
+
+    <!-- The default intensity level for notification vibrations. See
+         Settings.System.NOTIFICATION_VIBRATION_INTENSITY more details on the constant values and
+         meanings. -->
+    <integer name="config_defaultNotificationVibrationIntensity">3</integer>
+
+    <!-- Shutdown if the battery temperature exceeds (this value * 0.1) Celsius. -->
+    <integer name="config_shutdownBatteryTemperature">580</integer>
+
+    <!-- Is the device capable of hot swapping an UICC Card -->
+    <bool name="config_hotswapCapable">true</bool>
+
+    <!-- Minimum screen brightness setting allowed by power manager.
+         -2 is invalid so setting will resort to int value specified above.
+         Set this to 0.0 to allow screen to go to minimal brightness.
+         The user is forbidden from setting the brightness below this level. -->
+    <!-- Backlight floats, not brightness: the composer writes 1 + 20478 * value, so this is
+         panel level 15 (see screenBrightnessMap in configs/display_id_*.xml). -->
+    <item name="config_screenBrightnessSettingMinimumFloat" format="float" type="dimen">0.000683661</item>
+
+    <!-- Maximum screen brightness allowed by the power manager.
+         -2 is invalid so setting will resort to int value specified above.
+         Set this to 1.0 for maximum brightness range.
+         The user is forbidden from setting the brightness above this level. -->
+    <!-- Panel level 4094, 1200 nits. 4095 turns on the panel's peak mode, whose driver path
+         deadlocks the display. -->
+    <item name="config_screenBrightnessSettingMaximumFloat" format="float" type="dimen">0.199873034</item>
+
+    <!-- Default screen brightness setting set.
+         -2 is invalid so setting will resort to int value specified above.
+         Must be in the range specified by minimum and maximum. -->
+    <item name="config_screenBrightnessSettingDefaultFloat" format="float" type="dimen">0.07495849</item>
+
+    <!-- Screen brightness used to dim the screen while dozing in a very low power state.
+         May be less than the minimum allowed brightness setting
+         that can be set by the user. -->
+    <integer name="config_screenBrightnessDoze">2</integer>
+
+    <!-- Stability requirements in milliseconds for accepting a new brightness level.  This is used
+         for debouncing the light sensor.  Different constants are used to debounce the light sensor
+         when adapting to brighter or darker environments.  This parameter controls how quickly
+         brightness changes occur in response to an observed change in light level that exceeds the
+         hysteresis threshold.
+         Both must stay below ambientLightHorizonLong in configs/display_id_*.xml (3000 ms):
+         the framework keeps only that much sensor history, so a longer debounce is never met
+         and auto-brightness never follows the light in that direction. -->
+    <integer name="config_autoBrightnessBrighteningLightDebounce">2000</integer>
+    <integer name="config_autoBrightnessDarkeningLightDebounce">2500</integer>
+
+    <!-- The maximum range of gamma adjustment possible using the screen
+         auto-brightness adjustment setting. -->
+    <fraction name="config_autoBrightnessAdjustmentMaxGamma">150%</fraction>
+
+    <!-- Screen brightness used to dim the screen when the user activity
+         timeout expires.  May be less than the minimum allowed brightness setting
+         that can be set by the user. -->
+    <item name="config_screenBrightnessDimFloat" format="float" type="dimen">0.000683661</item>
+
+    <!-- Brightness ramp durations as stock HyperOS (framework-ext-res
+         config_animation_duration_*), except HDR content on/off: 900 ms (stock's 4 s felt too
+         slow). Slider 500 ms, window override and keys/quick settings 800 ms (stock's manual
+         duration), dim 1200 ms. Auto-brightness keeps the displayconfig ramp rates. -->
+    <integer name="config_brightnessRampDimDurationMillis">1200</integer>
+    <integer name="config_brightnessRampTemporaryDurationMillis">500</integer>
+    <integer name="config_brightnessRampOverrideDurationMillis">800</integer>
+    <integer name="config_brightnessRampHdrDurationMillis">900</integer>
+    <integer name="config_brightnessRampManualDurationMillis">800</integer>
+
+    <!-- Array of light sensor lux values to define our levels for auto backlight brightness support.
+         The N entries of this array define N + 1 control points as follows:
+         (1-based arrays)
+
+         Point 1:            (0, value[1]):             lux <= 0
+         Point 2:     (level[1], value[2]):  0        < lux <= level[1]
+         Point 3:     (level[2], value[3]):  level[2] < lux <= level[3]
+         ...
+         Point N+1: (level[N], value[N+1]):  level[N] < lux
+
+         The control points must be strictly increasing.  Each control point
+         corresponds to an entry in the brightness backlight values arrays.
+         For example, if lux == level[1] (first element of the levels array)
+         then the brightness will be determined by value[2] (second element
+         of the brightness values array).
+
+         Spline interpolation is used to determine the auto-brightness
+         backlight values for lux levels between these control points.
+
+         Must be overridden in platform specific overlays -->
+    <integer-array name="config_autoBrightnessLevels">
+        <item>1</item>
+        <item>2</item>
+        <item>3</item>
+        <item>4</item>
+        <item>5</item>
+        <item>6</item>
+        <item>7</item>
+        <item>8</item>
+        <item>9</item>
+        <item>10</item>
+        <item>11</item>
+        <item>12</item>
+        <item>13</item>
+        <item>14</item>
+        <item>15</item>
+        <item>16</item>
+        <item>17</item>
+        <item>18</item>
+        <item>19</item>
+        <item>20</item>
+        <item>21</item>
+        <item>22</item>
+        <item>23</item>
+        <item>24</item>
+        <item>25</item>
+        <item>26</item>
+        <item>27</item>
+        <item>28</item>
+        <item>29</item>
+        <item>30</item>
+        <item>35</item>
+        <item>40</item>
+        <item>45</item>
+        <item>50</item>
+        <item>55</item>
+        <item>60</item>
+        <item>65</item>
+        <item>70</item>
+        <item>75</item>
+        <item>80</item>
+        <item>85</item>
+        <item>90</item>
+        <item>95</item>
+        <item>100</item>
+        <item>120</item>
+        <item>140</item>
+        <item>160</item>
+        <item>180</item>
+        <item>200</item>
+        <item>220</item>
+        <item>240</item>
+        <item>260</item>
+        <item>280</item>
+        <item>300</item>
+        <item>320</item>
+        <item>340</item>
+        <item>360</item>
+        <item>380</item>
+        <item>400</item>
+        <item>420</item>
+        <item>440</item>
+        <item>460</item>
+        <item>480</item>
+        <item>500</item>
+        <item>600</item>
+        <item>700</item>
+        <item>900</item>
+        <item>1100</item>
+        <item>1300</item>
+        <item>1500</item>
+        <item>1700</item>
+        <item>1900</item>
+        <item>2000</item>
+        <item>2500</item>
+        <item>3000</item>
+        <item>3500</item>
+        <item>4000</item>
+        <item>4500</item>
+        <item>5000</item>
+        <item>5500</item>
+        <item>6000</item>
+        <item>6500</item>
+        <item>7000</item>
+        <item>7500</item>
+        <item>8000</item>
+        <item>8500</item>
+        <item>9000</item>
+        <item>9500</item>
+        <item>10000</item>
+        <item>10500</item>
+        <item>11000</item>
+        <item>11500</item>
+        <item>12000</item>
+        <item>12500</item>
+        <item>13000</item>
+        <item>13500</item>
+        <item>14000</item>
+        <item>14500</item>
+        <item>15000</item>
+        <item>16000</item>
+        <item>17000</item>
+        <item>18000</item>
+        <item>19000</item>
+        <item>20000</item>
+        <item>21000</item>
+        <item>22000</item>
+        <item>23000</item>
+        <item>24000</item>
+        <item>25000</item>
+        <item>26000</item>
+        <item>27000</item>
+        <item>28000</item>
+        <item>29000</item>
+        <item>30000</item>
+        <item>31000</item>
+        <item>32000</item>
+        <item>33000</item>
+        <item>34000</item>
+        <item>35000</item>
+        <item>35500</item>
+        <item>36000</item>
+        <item>36500</item>
+        <item>37000</item>
+        <item>37500</item>
+        <item>38000</item>
+        <item>38500</item>
+        <item>39000</item>
+        <item>40000</item>
+    </integer-array>
+
+    <!-- Array of desired screen brightness in nits corresponding to the lux values
+         in the config_autoBrightnessLevels array. The display brightness is defined as the measured
+         brightness of an all-white image.
+
+         If this is defined then:
+            - config_autoBrightnessLcdBacklightValues should not be defined
+            - config_screenBrightnessNits must be defined
+            - config_screenBrightnessBacklight must be defined
+
+         This array should have size one greater than the size of the config_autoBrightnessLevels
+         array. The brightness values must be non-negative and non-decreasing. This must be
+         overridden in platform specific overlays.
+         The values are the stock AOSP overlay's plus 15 nits from 7 lux up; the offset
+         fades in over 0-7 lux instead of starting as a 17-nit step at 7 lux.
+     -->
+     <array name="config_autoBrightnessDisplayValuesNits">
+        <item>3.5</item>
+        <item>9.83</item>
+        <item>16.15</item>
+        <item>22.48</item>
+        <item>28.8</item>
+        <item>35.13</item>
+        <item>41.46</item>
+        <item>45.84</item>
+        <item>47.07</item>
+        <item>48.54</item>
+        <item>50.01</item>
+        <item>51.59</item>
+        <item>53.24</item>
+        <item>54.99</item>
+        <item>56.82</item>
+        <item>58.74</item>
+        <item>60.75</item>
+        <item>62.85</item>
+        <item>65.04</item>
+        <item>67.31</item>
+        <item>70.27</item>
+        <item>72.12</item>
+        <item>74.66</item>
+        <item>77.28</item>
+        <item>80.78</item>
+        <item>82.8</item>
+        <item>85.69</item>
+        <item>88.67</item>
+        <item>91.73</item>
+        <item>94.89</item>
+        <item>98.13</item>
+        <item>98.59</item>
+        <item>99.04</item>
+        <item>99.51</item>
+        <item>99.95</item>
+        <item>100.4</item>
+        <item>100.84</item>
+        <item>101.28</item>
+        <item>101.73</item>
+        <item>102.19</item>
+        <item>102.62</item>
+        <item>103.05</item>
+        <item>103.49</item>
+        <item>103.92</item>
+        <item>104.36</item>
+        <item>105.81</item>
+        <item>107.27</item>
+        <item>108.72</item>
+        <item>110.25</item>
+        <item>111.63</item>
+        <item>113.09</item>
+        <item>114.55</item>
+        <item>116</item>
+        <item>117.46</item>
+        <item>118.91</item>
+        <item>120.37</item>
+        <item>121.82</item>
+        <item>123.28</item>
+        <item>124.74</item>
+        <item>126.26</item>
+        <item>127.65</item>
+        <item>129.1</item>
+        <item>130.58</item>
+        <item>132.09</item>
+        <item>133.6</item>
+        <item>141.14</item>
+        <item>150.8</item>
+        <item>170.12</item>
+        <item>190.34</item>
+        <item>211.77</item>
+        <item>233.67</item>
+        <item>256.05</item>
+        <item>278.84</item>
+        <item>290.4</item>
+        <item>350.38</item>
+        <item>412.98</item>
+        <item>430.686</item>
+        <item>448.393</item>
+        <item>466.099</item>
+        <item>483.806</item>
+        <item>501.512</item>
+        <item>519.219</item>
+        <item>536.925</item>
+        <item>554.632</item>
+        <item>572.338</item>
+        <item>590.045</item>
+        <item>607.751</item>
+        <item>625.458</item>
+        <item>643.164</item>
+        <item>660.871</item>
+        <item>678.577</item>
+        <item>696.284</item>
+        <item>713.99</item>
+        <item>731.696</item>
+        <item>749.403</item>
+        <item>767.109</item>
+        <item>784.816</item>
+        <item>802.522</item>
+        <item>820.229</item>
+        <item>837.935</item>
+        <item>873.348</item>
+        <item>908.761</item>
+        <item>944.174</item>
+        <item>979.587</item>
+        <item>1000</item>
+        <item>1002.5</item>
+        <item>1005</item>
+        <item>1007.5</item>
+        <item>1010</item>
+        <item>1012.5</item>
+        <item>1015</item>
+        <item>1017.5</item>
+        <item>1020</item>
+        <item>1022.5</item>
+        <item>1025</item>
+        <item>1037.5</item>
+        <item>1050</item>
+        <item>1062.5</item>
+        <item>1075</item>
+        <item>1087.5</item>
+        <item>1100</item>
+        <item>1112.5</item>
+        <item>1125</item>
+        <item>1137.5</item>
+        <item>1150</item>
+        <item>1162.5</item>
+        <item>1175</item>
+        <item>1187.5</item>
+        <item>1200</item>
+    </array>
+
+    <!-- Ambient light hysteresis (how much the light must change before auto-brightness
+         recalculates) is in configs/display_id_*.xml, ambientBrightnessChangeThresholds. -->
+
+    <integer name="config_autoBrightnessLightSensorRate">250</integer>
+
+    <!-- Amount of time it takes for the light sensor to warm up in milliseconds.
+         For this time after the screen turns on, the Power Manager
+         will not debounce light sensor readings -->
+    <integer name="config_lightSensorWarmupTime">1000</integer>
+
+    <!-- Whether a software navigation bar should be shown. NOTE: in the future this may be
+         autodetected from the Configuration. -->
+    <bool name="config_showNavigationBar">true</bool>
+
+    <!-- ComponentName of a dream to show whenever the system would otherwise have
+         gone to sleep.  When the PowerManager is asked to go to sleep, it will instead
+         try to start this dream if possible.  The dream should typically call startDozing()
+         to put the display into a low power state and allow the application processor
+         to be suspended.  When the dream ends, the system will go to sleep as usual.
+         Specify the component name or an empty string if none.
+
+         Note that doze dreams are not subject to the same start conditions as ordinary dreams.
+         Doze dreams will run whenever the power manager is in a dozing state. -->
+    <string name="config_dozeComponent">com.android.systemui/com.android.systemui.doze.DozeService</string>
+
+    <!-- Doze: should the TYPE_PICK_UP_GESTURE sensor be used as a pulse signal. -->
+    <bool name="config_dozePulsePickup">true</bool>
+
+    <!-- Type of the udfps long press sensor. Empty if long press is not supported. -->
+    <string name="config_dozeUdfpsLongPressSensorType" translatable="false">org.lineageos.sensor.udfps</string>
+
+    <!-- Control whether the always on display mode is available. This should only be enabled on
+         devices where the display has been tuned to be power efficient in DOZE and/or DOZE_SUSPEND
+         states. -->
+    <bool name="config_dozeAlwaysOnDisplayAvailable">true</bool>
+
+    <!-- Control whether the always on display mode is enabled by default. This value will be used
+         during initialization when the setting is still null. -->
+    <bool name="config_dozeAlwaysOnEnabled">false</bool>
+
+    <!-- Whether WiFi display is supported by this device.
+         There are many prerequisites for this feature to work correctly.
+         Here are a few of them:
+         * The WiFi radio must support WiFi P2P.
+         * The WiFi radio must support concurrent connections to the WiFi display and
+           to an access point.
+         * The Audio Server audio_policy_configuration.xml file must specify a rule for
+           the "r_submix" remote submix module.  This module is used to record and stream system
+           audio output to the WiFi display encoder in the media server.
+         * The remote submix module "audio.r_submix.default" must be installed on the device.
+         * The device must be provisioned with HDCP keys (for protected content).
+    -->
+    <bool name="config_enableWifiDisplay">true</bool>
+
+    <!-- The amount to scale fullscreen snapshots for Overview and snapshot starting windows. -->
+    <item name="config_highResTaskSnapshotScale" format="float" type="dimen">0.7</item>
+
+    <!-- Flag specifying whether VoLTE is available on device -->
+    <bool name="config_device_volte_available">true</bool>
+
+    <!-- Flag specifying whether VoLTE should be available for carrier: independent of
+         carrier provisioning. If false: hard disabled. If true: then depends on carrier
+         provisioning, availability etc -->
+    <bool name="config_carrier_volte_available">true</bool>
+
+    <!-- Flag specifying whether WFC over IMS is available on device -->
+    <bool name="config_device_wfc_ims_available">true</bool>
+
+    <!-- Flag specifying whether WFC over IMS should be available for carrier: independent of
+         carrier provisioning. If false: hard disabled. If true: then depends on carrier
+         provisioning, availability etc -->
+    <bool name="config_carrier_wfc_ims_available">true</bool>
+
+    <!-- Boolean indicating USSD over IMS is allowed.
+     If it is not supported due to modem limitations, USSD send over the CS pipe instead.-->
+    <bool name="config_allow_ussd_over_ims">true</bool>
+
+    <!-- Number of physical SIM slots on the device. This includes both eSIM and pSIM slots, and
+         is not necessarily the same as the number of phones/logical modems supported by the device.
+         For example, a multi-sim device can have 2 phones/logical modems, but 3 physical slots,
+         or a single SIM device can have 1 phones/logical modems, but 2 physical slots (one eSIM
+         and one pSIM) -->
+    <integer name="config_num_physical_slots">2</integer>
+
+    <!-- If true, the display will be shifted around in ambient mode. -->
+    <bool name="config_enableBurnInProtection">true</bool>
+
+    <!-- Whether device supports double tap to wake -->
+    <bool name="config_supportDoubleTapWake">true</bool>
+
+    <!-- The bounding path of the cutout region of the main built-in display.
+         Must either be empty if there is no cutout region, or a string that is parsable by
+         {@link android.util.PathParser}.
+
+         The path is assumed to be specified in display coordinates with pixel units and in
+         the display's native orientation, with the origin of the coordinate system at the
+         center top of the display. Optionally, you can append either `@left` or `@right` to the
+         end of the path string, in order to change the path origin to either the top left,
+         or top right of the display.
+
+         To facilitate writing device-independent emulation overlays, the marker `@dp` can be
+         appended after the path string to interpret coordinates in dp instead of px units.
+         Note that a physical cutout should be configured in pixels for the best results.
+
+         If the display supports multiple resolutions, please define the path config based on the
+         highest resolution so that it can be scaled correctly in each resolution.
+
+         Example for a 10px x 10px square top-center cutout:
+                <string ...>M -5,0 L -5,10 L 5,10 L 5,0 Z</string>
+         Example for a 10dp x 10dp square top-center cutout:
+                <string ...>M -5,0 L -5,10 L 5,10 L 5,0 Z @dp</string>
+
+         @see https://www.w3.org/TR/SVG/paths.html#PathData
+         -->
+    <string name="config_mainBuiltInDisplayCutout">M 0,0 H -33 V 110 H 33 V 0 H 0 Z</string>
+
+    <!-- The fixed keyboard vibration strength in [0,1], or -1 to indicate the strength not fixed
+         and should depend on the touch feedback intensity user setting -->
+    <item name="config_keyboardHapticFeedbackFixedAmplitude" type="dimen">0.62</item>
+
+    <!-- Indicating if keyboard vibration settings supported or not. -->
+    <bool name="config_keyboardVibrationSettingsSupported">true</bool>
+
+    <!-- Indicating if ringtone vibration settings supported or not. -->
+    <bool name="config_ringtoneVibrationSettingsSupported">true</bool>
+
+    <!-- Default files to pin via Pinner Service -->
+    <string-array translatable="false" name="config_defaultPinnerServiceFiles">
+        <item>"/system/framework/framework.jar"</item>
+        <item>"/system/framework/services.jar"</item>
+        <item>"/apex/com.android.runtime/javalib/core-oj.jar"</item>
+        <item>"/apex/com.android.runtime/javalib/core-libart.jar"</item>
+        <item>"/apex/com.android.media/javalib/updatable-media.jar"</item>
+        <item>"/system_ext/priv-app/SystemUI/SystemUI.apk"</item>
+        <item>"/system/bin/surfaceflinger"</item>
+    </string-array>
+
+    <!-- Default: 60 MB. Bytes that the PinnerService will pin for Home app -->
+    <integer name="config_pinnerHomePinBytes">6291456</integer>
+
+    <!-- Enable Zram writeback feature to allow unused pages in zram be written to flash. -->
+    <bool name="config_zramWriteback">true</bool>
+
+    <!-- The default refresh rate for a given device. Change this value to set a higher default
+         refresh rate. If the hardware composer on the device supports display modes with a higher
+         refresh rate than the default value specified here, the framework may use those higher
+         refresh rate modes if an app chooses one by setting preferredDisplayModeId or calling
+         setFrameRate().
+         If a non-zero value is set for config_defaultPeakRefreshRate, then
+         config_defaultRefreshRate may be set to 0, in which case the value set for
+         config_defaultPeakRefreshRate will act as the default frame rate. -->
+    <integer name="config_defaultRefreshRate">0</integer>
+
+    <!-- The default peak refresh rate for a given device. Change this value if you want to prevent
+         the framework from using higher refresh rates, even if display modes with higher refresh
+         rates are available from hardware composer. Only has an effect if the value is
+         non-zero. -->
+    <integer name="config_defaultPeakRefreshRate">120</integer>
+
+    <!-- Low-brightness flicker zone. Each rate switch can show as a flicker on this panel, and
+         it is most visible when the screen is dim. Stock skips the idle drop to 60 Hz at or
+         below brightness 1580 of 20479 (ro.vendor.disable_idle_fps.threshold in
+         libmisurfaceflinger, about 75 nits). Here, at or below brightness 22 (of 255, about
+         80 nits with our map), the framework holds the current rate (120 Hz, or the user's
+         maximum) instead of letting the idle timer switch it. Its 120 Hz vote has the lowest
+         priority, so a rate an app asks for (a 60 fps video) still applies, as on stock.
+         No ambient light condition (-1), so the light sensor isn't needed for it. -->
+    <integer-array translatable="false" name="config_brightnessThresholdsOfPeakRefreshRate">
+        <item>22</item>
+    </integer-array>
+    <integer-array translatable="false" name="config_ambientThresholdsOfPeakRefreshRate">
+        <item>-1</item>
+    </integer-array>
+    <integer name="config_defaultRefreshRateInZone">120</integer>
+
+    <!-- The type of the light sensor to be used by the display framework for things like
+         auto-brightness. If unset, then it just gets the default sensor of type TYPE_LIGHT. -->
+    <string name="config_displayLightSensorType">android.sensor.light</string>
+
+    <!-- The list of packages to automatically opt in to refresh rate suppressing by small area
+    detection. Format of this array should be packageName:threshold and threshold value should
+     be between 0 to 1-->
+    <string-array name="config_smallAreaDetectionAllowlist" translatable="false">
+        <!-- Add packages:threshold here -->
+        <item>com.tencent.mm:0.07</item>
+        <item>com.facebook.katana:0.07</item>
+        <item>com.instagram.android:0.07</item>
+        <item>com.spotify.music:0.05</item>
+        <item>com.reddit.frontpage:0.07</item>
+        <item>com.zhiliaoapp.musically:0.07</item>
+        <item>com.bilibili.app.in:0.07</item>
+        <item>com.twitter.android:0.07</item>
+        <item>com.google.android.youtube:0.07</item>
+    </string-array>
+
+    <!-- Whether or not wcg (wide color gamut) should be enabled on this device,
+         we only enabled it while the device has ability of mixed color spaces composition -->
+    <bool name="config_enableWcgMode">true</bool>
+
+    <!-- Colour modes in Settings > Display > Colors: vendor render intents 256 + n from the
+         panel PQ table (/vendor/etc/o16u_*_pq.xml, identical for all four panels), Xiaomi's
+         own modes with an sRGB and a Display P3 variant each. Only intents whose table
+         entries differ are listed: 0x100-0x102 are identical to each other, 0x10c equals
+         stock 0x10b (extract-files.py lowers expert sRGB's saturation). 0x10d (expert
+         wide colour) is left out: without Xiaomi's display service it shows only a
+         faint red. Natural (0) is left out too: it lets SurfaceFlinger use the
+         table's MediaTek template modes (HAL_sRGB / HAL_displayP3), where the panel looks
+         pink and wide-colour content turns pink.
+         The first entry is the default, and the framework also falls back to it when the
+         stored mode is no longer offered, so phones left on Natural move to native D65. -->
+    <integer-array name="config_availableColorModes">
+        <item>273</item> <!-- 0x111 Native_D65 -->
+        <item>263</item> <!-- 0x107 GM1 -->
+        <item>264</item> <!-- 0x108 GM2 -->
+        <item>265</item> <!-- 0x109 GM3 -->
+        <item>267</item> <!-- 0x10b expert_srgb -->
+    </integer-array>
+
+    <!-- Let SurfaceFlinger pick sRGB or Display P3 per content in every mode, and clear
+         any forced composition colour mode left from older builds. -->
+    <integer-array name="config_displayCompositionColorModes">
+        <item>273</item>
+        <item>263</item>
+        <item>264</item>
+        <item>265</item>
+        <item>267</item>
+    </integer-array>
+    <integer-array name="config_displayCompositionColorSpaces">
+        <item>0</item> <!-- COLOR_MODE_DEFAULT -->
+        <item>0</item>
+        <item>0</item>
+        <item>0</item>
+        <item>0</item>
+    </integer-array>
+
+    <!-- Whether the device enable the standalone (SA) mode of 5G NR.-->
+    <bool name="config_telephony5gStandalone">true</bool>
+
+    <!-- Whether the device enable the non-standalone (NSA) mode of 5G NR.-->
+    <bool name="config_telephony5gNonStandalone">true</bool>
+
+    <!-- Whether this device is supporting the software microphone toggle -->
+    <bool name="config_supportsMicToggle">true</bool>
+
+    <!-- Whether this device is supporting the camera toggle -->
+    <bool name="config_supportsCamToggle">true</bool>
+
+    <!-- Whether to enable fp unlock when screen turns off on udfps devices -->
+    <bool name="config_screen_off_udfps_enabled">true</bool>
+
+    <!-- Default value for fp screen off unlock toggle, it only works for the devices that support
+         fp screen off unlock-->
+    <bool name="config_screen_off_udfps_default_on">true</bool>
+
+    <!-- Allow automatic adjusting of the screen brightness while dozing in low power state. -->
+    <bool name="config_allowAutoBrightnessWhileDozing">false</bool>
+
+    <!-- If AOD can show an ambient version of the wallpaper -->
+    <bool name="config_dozeSupportsAodWallpaper">true</bool>
+
+    <!-- Indicate whether to allow the device to suspend when the screen is off
+         due to the proximity sensor.  This resource should only be set to true
+         if the sensor HAL correctly handles the proximity sensor as a wake-up source.
+         Otherwise, the device may fail to wake out of suspend reliably.
+         The default is false. -->
+    <bool name="config_suspendWhenScreenOffDueToProximity">true</bool>
+
+    <!-- Power Management: Specifies whether to decouple the auto-suspend state of the
+         device from the display on/off state.
+
+         When false, autosuspend_disable() will be called before the display is turned on
+         and autosuspend_enable() will be called after the display is turned off.
+         This mode provides best compatibility for devices using legacy power management
+         features such as early suspend / late resume.
+
+         When true, autosuspend_display() and autosuspend_enable() will be called
+         independently of whether the display is being turned on or off.  This mode
+         enables the power manager to suspend the application processor while the
+         display is on.
+
+         This resource should be set to "true" when a doze component has been specified
+         to maximize power savings but not all devices support it.
+
+         Refer to autosuspend.h for details.
+    -->
+    <bool name="config_powerDecoupleAutoSuspendModeFromDisplay">true</bool>
+
+    <!-- Power Management: Specifies whether to decouple the interactive state of the
+         device from the display on/off state.
+
+         When false, setInteractive(..., true) will be called before the display is turned on
+         and setInteractive(..., false) will be called after the display is turned off.
+         This mode provides best compatibility for devices that expect the interactive
+         state to be tied to the display state.
+
+         When true, setInteractive(...) will be called independently of whether the display
+         is being turned on or off.  This mode enables the power manager to reduce
+         clocks and disable the touch controller while the display is on.
+
+         This resource should be set to "true" when a doze component has been specified
+         to maximize power savings but not all devices support it.
+
+         Refer to power.h for details.
+    -->
+    <bool name="config_powerDecoupleInteractiveModeFromDisplay">true</bool>
+
+    <bool name="config_dozeAfterScreenOffByDefault">true</bool>
+
+    <!-- Quick Settings QR scanner: Aperture's, which decodes with ZXing and needs no
+         Google services. Aperture stays installed for this only; its camera entries
+         are disabled in sysconfig/aperture-qr-scanner.xml. -->
+    <string name="config_defaultQrCodeComponent" translatable="false">org.lineageos.aperture/.QrScannerActivity</string>
+</resources>

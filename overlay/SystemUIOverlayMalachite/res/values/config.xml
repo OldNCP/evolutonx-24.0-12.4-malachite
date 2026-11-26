@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     SPDX-FileCopyrightText: The LineageOS Project
+     SPDX-License-Identifier: Apache-2.0
+-->
+<resources> 
+
+    <string name="doze_brightness_sensor_type" translatable="false">xiaomi.sensor.aod</string>
+
+    <!-- No proximity sensor for SystemUI. The only one is the Elliptic
+         ultrasound sensor: turning it on while the speaker plays makes the
+         audio HAL stop and restart the speaker amp (a ~100 ms gap) and it
+         reads "near" while the speaker plays. Keyguard falsing turned it on
+         at every wake to the lockscreen, cutting music on each unlock.
+         SensorModule maps a type no sensor has to an unloaded sensor, so
+         FalsingCollector's register() does nothing. -->
+    <string-array name="proximity_sensor_posture_mapping" translatable="false">
+        <item>none</item>
+    </string-array>
+
+    <bool name="doze_proximity_check_before_pulse">false</bool>
+
+     <!-- Doze: Table that translates sensor values from the doze_brightness_sensor_type sensor
+               to brightness values in the integer scale [1, 255]; -1 means keeping the current
+               brightness. -->
+    <integer-array name="config_doze_brightness_sensor_to_brightness">
+        <item>-1</item>    <!-- 0.0: Never used -->
+        <item>-1</item>    <!-- 1.0: Never used -->
+        <item>-1</item>    <!-- 2.0: Never used -->
+        <item>-1</item>    <!-- 3.0: Never used -->
+        <item>16</item>    <!-- 4.0: Bright environment, 60 nits like the panel's AOD high -->
+        <item>2</item>     <!-- 5.0: Dark environment, 7 nits, near the panel's AOD low -->
+    </integer-array>
+
+    <!-- Doze: Table that translates sensor values from the doze_brightness_sensor_type sensor
+               to an opacity value for a black scrim that is overlayed in AOD1.
+               Valid range is from 0 (transparent) to 255 (opaque).
+               -1 means keeping the current opacity. -->
+    <integer-array name="config_doze_brightness_sensor_to_scrim_opacity">
+        <item>-1</item>
+        <item>0</item>
+        <item>0</item>
+        <item>0</item>
+        <item>0</item>
+        <item>0</item>
+    </integer-array>
+
+    <!-- Should we vibrate on an icon animation of the shelf. This should only be active if the
+     vibrator is capable of subtle vibrations -->
+    <bool name="config_vibrateOnIconAnimation">true</bool>
+</resources>

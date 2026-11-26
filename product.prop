@@ -1,0 +1,16 @@
+# Audio
+ro.audio.spatializer_enabled=true
+
+# Camera
+# Stock sets these for the Xiaomi camera app, which gates features on them.
+# Kept on product: vendor build props may not set persist.sys.* properties.
+persist.sys.miui.camera.quickcamera.supported=true
+persist.sys.miui.camera.version=3.0
+ro.product.camera.livephoto.support=3
+
+# Marketname
+# POCO boards override the default from marketname/. The override must load
+# from product: ro.product.marketname has no label of its own (default_prop),
+# which only init may set, and odm/vendor prop files load as vendor_init.
+ro.product.marketname=Redmi Note 14 Pro 5G
+import /product/etc/marketname/${ro.boot.board_id}.prop

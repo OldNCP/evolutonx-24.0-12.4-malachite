@@ -1,0 +1,3 @@
+# Python bytecode from running tools/ and tests/.
+__pycache__/
+/source/

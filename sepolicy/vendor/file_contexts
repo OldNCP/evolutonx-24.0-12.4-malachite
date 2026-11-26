@@ -1,0 +1,96 @@
+# Audio
+/(vendor|system/vendor)/bin/hw/android\.hardware\.audio\.service\.malachite u:object_r:hal_audio_default_exec:s0
+/dev/socket/audio_hw_socket u:object_r:audio_socket:s0
+/dev/elliptic(.*)? u:object_r:sound_device:s0
+
+# Batterysecret
+/(vendor|system/vendor)/bin/batterysecret u:object_r:batterysecret_exec:s0
+
+# Off-mode charging flag, charging screen only
+/(vendor|system/vendor)/bin/offmode_charge\.sh u:object_r:vendor_offmode_charge_exec:s0
+
+# Camera
+/mnt/vendor/persist/camera(/.*)? u:object_r:camera_persist_file:s0
+/data/vendor/camera(/.*)? u:object_r:vendor_camera_data_file:s0
+/(odm|vendor/odm|vendor)/lib(64)?/libanc_single_bokeh\.so u:object_r:same_process_hal_file:s0
+/(odm|vendor/odm|vendor)/lib(64)?/libmiphone_capture_bokeh\.so u:object_r:same_process_hal_file:s0
+/vendor/lib(64)?/com.xiaomi.plugin.capbokeh\.so u:object_r:same_process_hal_file:s0
+/vendor/lib(64)?/com.xiaomi.plugin.hdr\.so u:object_r:same_process_hal_file:s0
+/vendor/lib(64)?/com.xiaomi.plugin.ldc\.so u:object_r:same_process_hal_file:s0
+/vendor/lib(64)?/com.xiaomi.plugin.memcpy\.so u:object_r:same_process_hal_file:s0
+/vendor/lib(64)?/com.xiaomi.plugin.miaideblur\.so u:object_r:same_process_hal_file:s0
+/vendor/lib(64)?/com.xiaomi.plugin.miaiie\.so u:object_r:same_process_hal_file:s0
+/vendor/lib(64)?/com.xiaomi.plugin.rawsuperlight\.so u:object_r:same_process_hal_file:s0
+/vendor/lib(64)?/com.xiaomi.plugin.skinbeautifier\.so u:object_r:same_process_hal_file:s0
+/vendor/lib(64)?/com.xiaomi.plugin.sr\.so u:object_r:same_process_hal_file:s0
+/vendor/lib(64)?/com.xiaomi.plugin.superlowlight\.so u:object_r:same_process_hal_file:s0
+/vendor/lib(64)?/com.xiaomi.plugin.supernight\.so u:object_r:same_process_hal_file:s0
+/vendor/lib(64)?/com.xiaomi.plugin.swflip\.so u:object_r:same_process_hal_file:s0
+/vendor/lib(64)?/libarcsoft_hdr_detection\.so u:object_r:same_process_hal_file:s0
+/vendor/lib(64)?/libarcsoft_high_dynamic_range\.so u:object_r:same_process_hal_file:s0
+/vendor/lib(64)?/libarcsoft_low_light_hdr\.so u:object_r:same_process_hal_file:s0
+/vendor/lib(64)?/libarcsoft_super_night_raw\.so u:object_r:same_process_hal_file:s0
+/vendor/lib(64)?/libmiai_deblur\.so u:object_r:same_process_hal_file:s0
+/vendor/lib(64)?/libmialgo_ie_capture\.so u:object_r:same_process_hal_file:s0
+/vendor/lib(64)?/libmialgo_utils\.so u:object_r:same_process_hal_file:s0
+/vendor/lib(64)?/libmialgoengine\.so u:object_r:same_process_hal_file:s0
+/vendor/lib(64)?/libmpbase\.so u:object_r:same_process_hal_file:s0
+/vendor/lib(64)?/vendor.mediatek.hardware.apuware.apusys@1.0\.so u:object_r:same_process_hal_file:s0
+/vendor/lib(64)?/vendor.mediatek.hardware.apuware.utils@1.0\.so u:object_r:same_process_hal_file:s0
+/vendor/lib(64)?/vendor.mediatek.hardware.apuware.xrp@1.0\.so u:object_r:same_process_hal_file:s0
+
+# DisplayFeature
+/dev/mi_display/disp_feature u:object_r:vendor_displayfeature_device:s0
+
+# Face unlock
+/(vendor|odm)/bin/hw/mifaced u:object_r:hal_miface_default_exec:s0
+/data/vendor/face(/.*)? u:object_r:face_vendor_data_file:s0
+
+# Fingerprint
+/(vendor|system/vendor)/bin/hw/android\.hardware\.biometrics\.fingerprint-service\.xiaomi u:object_r:hal_fingerprint_default_exec:s0
+/data/vendor/fpc(/.*)? u:object_r:fingerprint_data_file:s0
+/data/vendor/fpdump(/.*)? u:object_r:fingerprint_data_file:s0
+/data/vendor/goodix(/.*)? u:object_r:fingerprint_data_file:s0
+/dev/xiaomi-fp u:object_r:vendor_fingerprint_device:s0
+
+# Graphics
+/(vendor|system/vendor)/bin/hw/android\.hardware\.graphics\.allocator-V2-service-mediatek u:object_r:hal_graphics_allocator_default_exec:s0
+/vendor/lib(64)?/hw/mapper\.mediatek\.so u:object_r:same_process_hal_file:s0
+
+# Keymint
+/(vendor|system/vendor)/bin/hw/android.hardware.identity-service.mitee@5.0 u:object_r:hal_identity_default_exec:s0
+/(vendor|system/vendor)/bin/hw/android.hardware.security.keymint@3.0-service.mitee u:object_r:hal_keymint_default_exec:s0
+
+# Lights
+/(vendor|system/vendor)/bin/hw/android\.hardware\.light-service\.malachite u:object_r:hal_light_default_exec:s0
+
+# Secure Element
+/(vendor|system/vendor)/bin/hw/vendor.xiaomi.hardware.secure_element-service u:object_r:hal_secure_element_default_exec:s0
+
+# Sensors
+/(odm|vendor/odm)/bin/hw/vendor.xiaomi.sensor.citsensorservice.aidl u:object_r:vendor_hal_citsensorservice_xiaomi_default_exec:s0
+/(vendor|system/vendor)/bin/hw/android\.hardware\.sensors-service\.xiaomi-multihal u:object_r:hal_sensors_default_exec:s0
+
+# Thermal
+/sys/class/thermal/thermal_message/wifi_limit u:object_r:sys_thermal_wifi_limit:s0
+/sys/class/thermal/thermal_message/flash_state u:object_r:sys_thermal_flash_state:s0
+/sys/class/thermal/thermal_message/torch_real_level u:object_r:sys_thermal_torch_real_level:s0
+/sys/devices/virtual/thermal/thermal_message/wifi_limit u:object_r:sys_thermal_wifi_limit:s0
+/sys/devices/virtual/thermal/thermal_message/flash_state u:object_r:sys_thermal_flash_state:s0
+/sys/devices/virtual/thermal/thermal_message/torch_real_level u:object_r:sys_thermal_torch_real_level:s0
+/(vendor|system/vendor)/bin/hw/android\.hardware\.thermal-service\.pixel u:object_r:hal_thermal_default_exec:s0
+/(vendor|system/vendor)/bin/thermal_symlinks u:object_r:init-thermal-symlinks-sh_exec:s0
+/(vendor|system/vendor)/bin/mi_thermald u:object_r:mi_thermald_exec:s0
+
+# Vibrator
+/vendor/bin/hw/vendor\.qti\.hardware\.vibrator\.service                            u:object_r:hal_vibrator_default_exec:s0
+
+# Xiaomi Touch
+/dev/xiaomi-touch u:object_r:vendor_touchfeature_device:s0
+/vendor/bin/hw/vendor\.lineage\.touch-service\.malachite u:object_r:hal_lineage_touch_default_exec:s0
+
+# Dolby
+/vendor/bin/hw/vendor\.dolby\.hardware\.dms@2\.0-service u:object_r:hal_dms_default_exec:s0
+/data/vendor/dolby(/.*)? u:object_r:vendor_data_file:s0
+/vendor/bin/vendor\.charger_backlight\.malachite u:object_r:charger_backlight_exec:s0
+/vendor/bin/hw/android\.hardware\.media\.c2-dolby-service u:object_r:mediacodec_exec:s0

@@ -1,0 +1,141 @@
+# Evolution X on malachite (evolutionx-24.0)
+
+State of the Evolution X port: first written 2026-10-29, updated 2026-10-31 after the
+first release (Evolution X 12.3 with Google apps, built and signed that day), and
+updated for Evolution X 12.4.
+Read this before changing or building anything on this branch. The longer
+version, with references, is `notes/2026-10-29-evolutionx-port.md` in the
+workspace repository (E:\LineageOS-23.2-Malachite, local only).
+
+## What this branch is
+
+Evolution X (their Android 17 line, manifest branch `cnb`, version 12.4)
+ported from `lineage-24.0`. Evolution X cnb is LineageOS 24.0 plus their own
+forks: their manifest pins every LineageOS project at lineage-24.0, replaces
+frameworks/base, frameworks/native, Settings, Telephony, Bluetooth, build,
+system/sepolicy and others with Evolution X's forks, and mounts their
+`vendor_evolution` repo at `vendor/lineage` - the same path our tree already
+inherits from. The device configuration consists of:
+
+- `manifests/evolution.xml` - the local manifest for their manifest
+  (device, kernel-prebuilt, vendor, hardware/mediatek, hardware/xiaomi,
+  sepolicy_vndr, vendor/mediatek/ims, hardware/dolby added;
+  external/wpa_supplicant_8 replaced with our fork; frameworks/base,
+  frameworks/native, Settings, Telephony and Bluetooth use our Evolution X
+  branches described below).
+- `lineage_malachite.mk` - the Evolution X options (EVO_BUILD_TYPE,
+  WITH_GMS := true, TARGET_ENABLE_FP_OVERRIDE := false,
+  TARGET_PROVIDES_FACE_UNLOCK_HAL := true, TARGET_BOOT_ANIMATION_RES := 1080).
+  It also inherits the existing local inline-signing configuration.
+
+`android_frameworks_native`, branch `evolutionx-24.0`, starts at
+Evolution X cnb `cc9996b` and replaces its GED KPI implementation with the
+safe implementation from our lineage-24.0 commit `a469d75` (native fix
+`2bcc679`). GED stays enabled,
+but its state lives outside `Surface`, so framework callers and prebuilts
+agree on the class layout. The port also retains the source fix's locked
+state table, one-time probe, null-buffer checks and fence handling.
+All other Evolution X native changes are retained.
+
+The product name stays `lineage_malachite`; that follows Evolution X's own
+device trees (marble, rosemary), whose trees are unmodified LineageOS trees
+with a few variables added.
+
+## What was checked in the sources before the first build
+
+- Every repository `device.mk` and `BoardConfig.mk` needs exists in the cnb
+  manifest (main + snippets): hardware/lineage/interfaces,
+  hardware/google/pixel (incl. mm/fstab.zram.50p-1g, pixelstats,
+  power-libperfmgr, thermal), hardware/google/interfaces, packages/apps/Dialer,
+  packages/modules/NetworkStack, lineage-sdk, device/lineage/sepolicy,
+  packages/resources/devicesettings, vendor/qcom/opensource/vibrator,
+  packages/apps/Aperture.
+- The config chain is common_full_phone.mk -> common.mk -> evolution.mk +
+  version.mk, so every option set in lineage_malachite.mk takes effect.
+- evo's vendor config sets PRODUCT_NOT_DEBUGGABLE_IN_USERDEBUG := true like
+  LineageOS: `breakfast malachite userdebug` produces ro.debuggable=0, the
+  same release-by-default behaviour as our 24.0 builds.
+
+## Framework features (since 2026-10-31)
+
+Evolution X's frameworks are their own forks, so pointing those paths at our
+lineage forks would break Evolution X's features. Instead, base, Settings,
+Telephony and Bluetooth (like native above) use `evolutionx-24.0`
+branches in our forks: Evolution X cnb plus every malachite commit of the
+lineage-24.0 fork, cherry-picked. That brings the unrounded backlight, timed
+brightness ramps, hwui and libgui FPSGO hooks, Dolby Vision HDR reporting,
+call volume index to the HAL, QS pulldown, the UDFPS canvas clear, no
+screenshot flash by default, the FaceSense challenge fix, the shared SIM /
+eUICC selection (Settings and TeleService), the refresh rate list fixes, the
+battery saver CPU limit and the LE Audio fixes. evolution.xml lists each.
+
+Left out because Evolution X already has its own: the three-finger screenshot
+(Evolution X's ThreeFingersSwipeListener and its gesture action setting),
+the market device name (Evolution X's SettingsProvider already uses
+ro.product.marketname) and the screenshot flash switch (taken from Evolution
+X in the first place). In Settings the CPU limit sits after Evolution X's
+battery saver refresh rate switch (order 91).
+
+Since 2026-10-30 this branch carries everything merged into lineage-24.0:
+MiFace (stock mifaced face HAL, replaces ParanoidSense), the keyguard-only
+FOD touch gating, the camera platform_app_36 policy fix, the touch-rate
+event fix, libpowerhalwrap_vendor and the source ID (tools/source-id.sh reads
+git only, so it works unchanged here).
+
+## Building
+
+The 2026-10-31 release was built this way (on a build server, with the release keys
+signing inline). Every evolutionx-24.0 branch evolution.xml names is published, and the
+Wi-Fi supplicant NAN fix is in hardware/mediatek `lineage-24.0`.
+
+```
+mkdir -p ~/evox && cd ~/evox
+repo init -u https://github.com/Evolution-X/manifest.git -b cnb --git-lfs
+mkdir -p .repo/local_manifests
+curl -o .repo/local_manifests/evolution.xml \
+  https://raw.githubusercontent.com/malachite-project/android_device_xiaomi_malachite/evolutionx-24.0/manifests/evolution.xml
+repo sync -c -j4 --no-tags --no-clone-bundle
+TOP="$PWD" bash /mnt/e/LineageOS-23.2-Malachite/tools/setup_inline_keys.sh || exit 1
+source build/envsetup.sh
+breakfast malachite userdebug
+mka -j$(nproc) --skip-soong-tests target-files-package otatools
+```
+
+- `breakfast malachite userdebug` matches tools/build_malachite.sh; the
+  userdebug variant is not debuggable here (see above).
+- `repo init --reference` against the existing 24.0 tree should make the
+  sync cheap: evo pins LineageOS projects at exactly lineage-24.0.
+- Signing: run setup_inline_keys.sh with TOP set to the new EvoX tree, as
+  above, before product configuration. It uses the existing local keys and
+  reference signed target-files and writes vendor/lineage-priv/keys. The
+  device product explicitly inherits that keys.mk because Evolution X's
+  vendor config only looks under vendor/evolution-priv. Keep this workflow
+  on the lineage-priv path; do not make a second copy under evolution-priv.
+  If the script reports missing keys or a missing reference, stop and
+  resolve it before compiling. No keys belong in either public branch.
+- Before packaging, run
+  `python3 /mnt/e/LineageOS-23.2-Malachite/tools/check_inline_signing.py REFERENCE_signed-target_files.zip EVOX_target_files.zip`
+  from the source root with the build environment sourced. Replace the two
+  file names with the reference used by setup_inline_keys.sh and the new
+  target-files zip. Stop if the command fails; do not package that output.
+- The build's version string is `EvolutionX-17.0-<date>-malachite-12.4-Unofficial`
+  (`-Vanilla` is added when WITH_GMS is false, which then also needs no MindTheGapps).
+- Google apps are baked in (WITH_GMS := true, vendor/gms). For a vanilla
+  build set WITH_GMS := false.
+
+## Build results
+
+- 2026-10-31: compiled at the first attempt and signed with the release keys; build ID
+  CP2A.260605.016. Overlays against Evolution X's Settings, Telephony and Wi-Fi forks
+  needed no changes.
+- If a later build fails on Evolution X changes in build/make or an overlay target,
+  fix the overlay or the device side; do not point the manifest at the lineage forks
+  and do not disable the check that found it.
+
+## Decisions made (user may change)
+
+- Google apps baked in (WITH_GMS := true); lineage-24.0 stays the Google-free ROM.
+- Stock Xiaomi fingerprint kept; evo's Pixel fingerprint spoof off
+  (TARGET_ENABLE_FP_OVERRIDE := false).
+- Branch name: evolutionx-24.0, a ROM line like lineage-24.0 rather than a
+  feature branch (-24.0 suffix for the Android 17 line).
