@@ -71,10 +71,15 @@ jobs:
 
       - name: Initialize Evolution X source tree
         run: |
-          rm -rf "$BUILD_DIR"
+          if [ -d "$BUILD_DIR/.repo" ] && [ ! -d "$BUILD_DIR/.repo/project-objects" ]; then
+            echo "Previous run purged git object cache, wiping $BUILD_DIR..."
+            rm -rf "$BUILD_DIR"
+          fi
           mkdir -p "$BUILD_DIR"
           cd "$BUILD_DIR"
-          repo init -u https://github.com/Evolution-X/manifest.git -b cnb --git-lfs --depth=1
+          if [ ! -d ".repo" ]; then
+            repo init -u https://github.com/Evolution-X/manifest.git -b cnb --git-lfs --depth=1
+          fi
           mkdir -p .repo/local_manifests
           cp "$GITHUB_WORKSPACE/manifests/evolution.xml" .repo/local_manifests/evolution.xml
 
@@ -83,19 +88,15 @@ jobs:
           cd "$BUILD_DIR"
           repo sync -c -j4 --force-sync --no-clone-bundle --no-tags --optimized-fetch --prune || \
           repo sync -c -j2 --force-sync --no-clone-bundle --no-tags --optimized-fetch --prune
-          if [ ! -d "device/xiaomi/malachite" ]; then
-            mkdir -p device/xiaomi/malachite
-            cp -r "$GITHUB_WORKSPACE/." device/xiaomi/malachite/
-          fi
+          mkdir -p device/xiaomi/malachite
+          cp -r "$GITHUB_WORKSPACE/." device/xiaomi/malachite/
 
-      - name: Record source snapshot and free git cache
+      - name: Record source snapshot
         run: |
           cd "$BUILD_DIR"
           if [ -f device/xiaomi/malachite/tools/source-snapshot.sh ]; then
             bash device/xiaomi/malachite/tools/source-snapshot.sh || true
           fi
-          # Free raw git objects before compiler starts
-          rm -rf .repo/project-objects 2>/dev/null || true
           df -h
 
       - name: Build Evolution X
