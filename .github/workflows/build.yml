@@ -19,7 +19,7 @@ permissions:
   contents: write
 
 env:
-  BUILD_DIR: /evolution/evox
+  BUILD_DIR: /root/evox
 
 jobs:
   build:
@@ -31,11 +31,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Prepare build mount
+      - name: Prepare local build directory
         run: |
-          mount -o remount,exec /evolution 2>/dev/null || true
-          mkdir -p /evolution/evox
-          df -h
+          mkdir -p /root/evox
+          df -h /
 
       - name: Install build dependencies
         run: |
@@ -115,8 +114,8 @@ jobs:
         with:
           name: EvolutionX-12.4-malachite-output
           path: |
-            /evolution/evox/out/target/product/malachite/EvolutionX-*.zip
-            /evolution/evox/out/target/product/malachite/boot.img
-            /evolution/evox/out/target/product/malachite/recovery.img
-            /evolution/evox/out/target/product/malachite/init_boot.img
+            /root/evox/out/target/product/malachite/EvolutionX-*.zip
+            /root/evox/out/target/product/malachite/boot.img
+            /root/evox/out/target/product/malachite/recovery.img
+            /root/evox/out/target/product/malachite/init_boot.img
           if-no-files-found: warn
