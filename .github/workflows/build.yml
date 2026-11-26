@@ -78,18 +78,22 @@ jobs:
       - name: Sync source repositories
         run: |
           cd ~/evox
-          repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --optimized-fetch --prune
+          repo sync -c -j4 --force-sync --no-clone-bundle --no-tags --optimized-fetch --prune || \
+          repo sync -c -j2 --force-sync --no-clone-bundle --no-tags --optimized-fetch --prune
           if [ ! -d "device/xiaomi/malachite" ]; then
             mkdir -p device/xiaomi/malachite
             cp -r "$GITHUB_WORKSPACE/." device/xiaomi/malachite/
           fi
 
-      - name: Record source snapshot
+      - name: Record source snapshot and free git cache
         run: |
           cd ~/evox
           if [ -f device/xiaomi/malachite/tools/source-snapshot.sh ]; then
             bash device/xiaomi/malachite/tools/source-snapshot.sh || true
           fi
+          # Free 35-40GB of raw git objects before compiler starts
+          rm -rf .repo/project-objects 2>/dev/null || true
+          df -h
 
       - name: Build Evolution X
         run: |
