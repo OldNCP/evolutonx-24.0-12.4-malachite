@@ -89,7 +89,7 @@ jobs:
           repo sync -c -j4 --force-sync --no-clone-bundle --no-tags --optimized-fetch --prune || \
           repo sync -c -j2 --force-sync --no-clone-bundle --no-tags --optimized-fetch --prune
           mkdir -p device/xiaomi/malachite
-          cp -r "$GITHUB_WORKSPACE/." device/xiaomi/malachite/
+          rsync -a --exclude='.git' "$GITHUB_WORKSPACE/" device/xiaomi/malachite/
 
       - name: Record source snapshot
         run: |
