@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       build_target:
-        description: 'Build target (bacon for full zip, target-files-package otatools for release target)'
+        description: 'Build target (evolution for full zip, target-files-package otatools for release target)'
         required: true
-        default: 'bacon'
+        default: 'evolution'
       runs_on:
         description: 'Runner label'
         required: true
@@ -107,7 +107,10 @@ jobs:
           export USE_CCACHE=0
           source build/envsetup.sh
           breakfast malachite userdebug
-          TARGET="${{ github.event.inputs.build_target || 'bacon' }}"
+          TARGET="${{ github.event.inputs.build_target || 'evolution' }}"
+          if [ "$TARGET" = "bacon" ]; then
+            TARGET="evolution"
+          fi
           mka -j$(nproc --all) --skip-soong-tests $TARGET
 
       - name: Upload build artifacts
