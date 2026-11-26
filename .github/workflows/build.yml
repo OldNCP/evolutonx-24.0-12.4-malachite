@@ -51,6 +51,7 @@ jobs:
           git config --global user.name "OldNCP"
           git config --global user.email "bot@github.actions"
           git config --global color.ui false
+          git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
       - name: Initialize Evolution X source tree
         run: |
@@ -58,13 +59,16 @@ jobs:
           cd ~/evox
           repo init -u https://github.com/Evolution-X/manifest.git -b cnb --git-lfs --depth=1
           mkdir -p .repo/local_manifests
-          curl -sL https://raw.githubusercontent.com/OldNCP/evolutonx-24.0-12.4-malachite/evolutionx-24.0/manifests/evolution.xml \
-            -o .repo/local_manifests/evolution.xml
+          cp "$GITHUB_WORKSPACE/manifests/evolution.xml" .repo/local_manifests/evolution.xml
 
       - name: Sync source repositories
         run: |
           cd ~/evox
           repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --optimized-fetch --prune
+          if [ ! -d "device/xiaomi/malachite" ]; then
+            mkdir -p device/xiaomi/malachite
+            cp -r "$GITHUB_WORKSPACE/." device/xiaomi/malachite/
+          fi
 
       - name: Record source snapshot
         run: |
