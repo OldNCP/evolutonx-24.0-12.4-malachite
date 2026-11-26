@@ -18,6 +18,9 @@ on:
 permissions:
   contents: write
 
+env:
+  BUILD_DIR: /evolution/evox
+
 jobs:
   build:
     name: Build Evolution X 12.4
@@ -28,10 +31,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Free disk space (for GitHub-hosted runners)
+      - name: Prepare build mount
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/share/swift /opt/hostedtoolcache 2>/dev/null || true
-          sudo docker system prune -af 2>/dev/null || true
+          mount -o remount,exec /evolution 2>/dev/null || true
+          mkdir -p /evolution/evox
           df -h
 
       - name: Install build dependencies
@@ -69,16 +72,16 @@ jobs:
 
       - name: Initialize Evolution X source tree
         run: |
-          rm -rf ~/evox
-          mkdir -p ~/evox
-          cd ~/evox
+          rm -rf "$BUILD_DIR"
+          mkdir -p "$BUILD_DIR"
+          cd "$BUILD_DIR"
           repo init -u https://github.com/Evolution-X/manifest.git -b cnb --git-lfs --depth=1
           mkdir -p .repo/local_manifests
           cp "$GITHUB_WORKSPACE/manifests/evolution.xml" .repo/local_manifests/evolution.xml
 
       - name: Sync source repositories
         run: |
-          cd ~/evox
+          cd "$BUILD_DIR"
           repo sync -c -j4 --force-sync --no-clone-bundle --no-tags --optimized-fetch --prune || \
           repo sync -c -j2 --force-sync --no-clone-bundle --no-tags --optimized-fetch --prune
           if [ ! -d "device/xiaomi/malachite" ]; then
@@ -88,17 +91,17 @@ jobs:
 
       - name: Record source snapshot and free git cache
         run: |
-          cd ~/evox
+          cd "$BUILD_DIR"
           if [ -f device/xiaomi/malachite/tools/source-snapshot.sh ]; then
             bash device/xiaomi/malachite/tools/source-snapshot.sh || true
           fi
-          # Free 35-40GB of raw git objects before compiler starts
+          # Free raw git objects before compiler starts
           rm -rf .repo/project-objects 2>/dev/null || true
           df -h
 
       - name: Build Evolution X
         run: |
-          cd ~/evox
+          cd "$BUILD_DIR"
           export EVO_BUILD_TYPE=Unofficial
           export WITH_GMS=true
           export USE_CCACHE=0
@@ -112,8 +115,8 @@ jobs:
         with:
           name: EvolutionX-12.4-malachite-output
           path: |
-            ~/evox/out/target/product/malachite/EvolutionX-*.zip
-            ~/evox/out/target/product/malachite/boot.img
-            ~/evox/out/target/product/malachite/recovery.img
-            ~/evox/out/target/product/malachite/init_boot.img
+            /evolution/evox/out/target/product/malachite/EvolutionX-*.zip
+            /evolution/evox/out/target/product/malachite/boot.img
+            /evolution/evox/out/target/product/malachite/recovery.img
+            /evolution/evox/out/target/product/malachite/init_boot.img
           if-no-files-found: warn
