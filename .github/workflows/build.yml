@@ -11,9 +11,9 @@ on:
         required: true
         default: 'bacon'
       runs_on:
-        description: 'Runner label (use self-hosted for custom servers or ubuntu-22.04 for GitHub runners)'
+        description: 'Runner label'
         required: true
-        default: 'ubuntu-22.04'
+        default: 'self-hosted'
 
 permissions:
   contents: write
@@ -21,7 +21,7 @@ permissions:
 jobs:
   build:
     name: Build Evolution X 12.4
-    runs-on: ${{ github.event.inputs.runs_on || 'ubuntu-22.04' }}
+    runs-on: self-hosted
     timeout-minutes: 360
 
     steps:
