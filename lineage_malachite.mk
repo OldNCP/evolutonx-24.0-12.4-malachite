@@ -24,12 +24,15 @@ $(call inherit-product, vendor/lineage/config/common_full_phone.mk)
 # stock Xiaomi fingerprint set below instead of Evolution X's Pixel
 # spoof. The tree ships stock's mifaced face HAL, so Evolution X's
 # generic FaceUnlock packages stay out. 1080 is the boot animation resolution
-# for the 1220x2712 panel.
+# for the 1220x2712 panel. TARGET_HAS_UDFPS and EXTRA_UDFPS_ANIMATIONS enable
+# optical in-display fingerprint features and Evolver custom animations.
 EVO_BUILD_TYPE := Unofficial
 WITH_GMS := true
 TARGET_ENABLE_FP_OVERRIDE := false
 TARGET_PROVIDES_FACE_UNLOCK_HAL := true
 TARGET_BOOT_ANIMATION_RES := 1080
+TARGET_HAS_UDFPS := true
+EXTRA_UDFPS_ANIMATIONS := true
 
 PRODUCT_NAME := lineage_malachite
 PRODUCT_DEVICE := malachite
